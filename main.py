@@ -31,8 +31,8 @@ def connect(settings):
     ok, reason = client.connect()
     if not ok:
         raise ConnectionError(f"IQ Option rechazo la conexion: {reason}")
-    client.change_balance("PRACTICE")
-    log.info("Conectado exclusivamente a PRACTICE | saldo: %.2f", client.get_balance())
+    client.change_balance(settings.account)
+    log.info("Conectado a %s | saldo: %.2f", settings.account, client.get_balance())
     return client
 
 
@@ -54,12 +54,15 @@ def connect_with_retry(settings, attempts=5):
 def main():
     cfg = Settings()
     cfg.validate()
+    if cfg.account == "REAL":
+        log.warning("MODO REAL SELECCIONADO | las operaciones usan dinero real")
     client = connect_with_retry(cfg)
     risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
     disabled_until = {asset: 0.0 for asset in cfg.assets}
-    log.info("Configurados=%s | monto=%.2f | trading=%s", ", ".join(cfg.assets), cfg.amount, cfg.enable_trading)
+    log.info("Cuenta=%s | configurados=%s | monto=%.2f | trading=%s",
+             cfg.account, ", ".join(cfg.assets), cfg.amount, cfg.enable_trading)
 
     while True:
         allowed, reason = risk.can_trade()
@@ -105,7 +108,7 @@ def main():
                             log.warning("%s | Orden rechazada: %s | omitido %d minutos",
                                         asset, order_id, cooldown // 60)
                         else:
-                            log.info("%s | Orden PRACTICE enviada: %s", asset, order_id)
+                            log.info("%s | Orden %s enviada: %s", asset, cfg.account, order_id)
                             raw_result = client.check_win_v4(order_id)
                             pnl = extract_pnl(raw_result)
                             risk.record(pnl)
