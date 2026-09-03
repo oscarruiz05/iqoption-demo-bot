@@ -4,6 +4,7 @@ from assets import parse_assets, rejection_cooldown_seconds
 from config import REAL_CONFIRMATION_PHRASE, validate_account_mode
 from risk import RiskManager, extract_pnl
 from strategy import detect_signal
+from support_channel import bearish_rejection, bullish_rejection, cluster_levels
 
 
 class RiskTests(unittest.TestCase):
@@ -132,6 +133,25 @@ class StrategyTests(unittest.TestCase):
         frame = setup_frame("call")
         frame.loc[frame.index[-1], "rsi14"] = 49
         self.assertIsNone(detect_signal(frame))
+
+
+class SupportChannelTests(unittest.TestCase):
+    def test_clusters_levels_with_repeated_touches(self):
+        levels = [1.1000, 1.1002, 1.1050, 1.1051, 1.1200]
+        clusters = cluster_levels(levels, tolerance=0.0003)
+        self.assertEqual(len(clusters), 2)
+        self.assertAlmostEqual(clusters[0], 1.1001)
+
+    def test_rejects_isolated_level(self):
+        self.assertEqual(cluster_levels([1.1000, 1.1100], tolerance=0.0003), [])
+
+    def test_detects_bullish_rejection_candle(self):
+        row = {"open": 1.1004, "close": 1.1008, "min": 1.0995, "max": 1.1009}
+        self.assertTrue(bullish_rejection(row))
+
+    def test_detects_bearish_rejection_candle(self):
+        row = {"open": 1.1006, "close": 1.1002, "min": 1.1001, "max": 1.1015}
+        self.assertTrue(bearish_rejection(row))
 
 
 if __name__ == "__main__":
