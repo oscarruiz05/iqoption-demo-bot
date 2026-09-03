@@ -56,10 +56,10 @@ Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
 El bot recorre los pares en el orden configurado y mantiene una sola operación
 abierta a la vez para no exceder los límites de riesgo.
 
-Antes de analizarlos, consulta cuáles están abiertos para opciones turbo/binarias.
-Los cerrados o no disponibles se omiten y la lista se actualiza cada 30 minutos.
-La consulta completa de mercados es deliberadamente poco frecuente porque es una
-operación pesada en la API comunitaria.
+Cada par se valida directamente al solicitar sus velas. Si está cerrado, no existe
+o no entrega datos, se omite durante cinco minutos sin detener los demás. El bot no
+usa `get_all_open_time()`, porque en `iqoptionapi 7.1.1` esa consulta también inicia
+el módulo digital y puede quedar esperando o lanzar errores internos.
 
 ## Filtros de entrada
 
