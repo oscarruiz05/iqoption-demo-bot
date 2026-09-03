@@ -1,6 +1,7 @@
 import unittest
 import pandas as pd
 from assets import parse_assets, rejection_cooldown_seconds
+from config import REAL_CONFIRMATION_PHRASE, validate_account_mode
 from risk import RiskManager, extract_pnl
 from strategy import detect_signal
 from support_channel import bearish_rejection, bullish_rejection, cluster_levels
@@ -58,6 +59,31 @@ class ConfigTests(unittest.TestCase):
 
     def test_unknown_rejection_uses_default_cooldown(self):
         self.assertEqual(rejection_cooldown_seconds("temporary error"), 300)
+
+    def test_practice_does_not_require_real_confirmation(self):
+        validate_account_mode("PRACTICE", True, False, "", 10, 1)
+
+    def test_real_observation_mode_is_allowed(self):
+        validate_account_mode("REAL", False, False, "", 10, 1)
+
+    def test_real_trading_requires_explicit_enable(self):
+        with self.assertRaises(ValueError):
+            validate_account_mode("REAL", True, False, REAL_CONFIRMATION_PHRASE, 1, 1)
+
+    def test_real_trading_requires_exact_confirmation(self):
+        with self.assertRaises(ValueError):
+            validate_account_mode("REAL", True, True, "CONFIRMO", 1, 1)
+
+    def test_real_trading_rejects_amount_over_limit(self):
+        with self.assertRaises(ValueError):
+            validate_account_mode("REAL", True, True, REAL_CONFIRMATION_PHRASE, 2, 1)
+
+    def test_real_trading_accepts_all_safeguards(self):
+        validate_account_mode("REAL", True, True, REAL_CONFIRMATION_PHRASE, 1, 1)
+
+    def test_rejects_unknown_account(self):
+        with self.assertRaises(ValueError):
+            validate_account_mode("DEMO", False, False, "", 1, 1)
 
 
 def setup_frame(direction: str) -> pd.DataFrame:

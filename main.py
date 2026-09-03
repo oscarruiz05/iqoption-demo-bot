@@ -49,8 +49,8 @@ def connect(settings):
     ok, reason = client.connect()
     if not ok:
         raise ConnectionError(f"IQ Option rechazo la conexion: {reason}")
-    client.change_balance("PRACTICE")
-    log.info("Conectado exclusivamente a PRACTICE | saldo: %.2f", client.get_balance())
+    client.change_balance(settings.account)
+    log.info("Conectado a %s | saldo: %.2f", settings.account, client.get_balance())
     return client
 
 
@@ -72,13 +72,15 @@ def connect_with_retry(settings, attempts=5):
 def main():
     cfg = Settings()
     cfg.validate()
+    if cfg.account == "REAL":
+        log.warning("MODO REAL SELECCIONADO | las operaciones usan dinero real")
     client = connect_with_retry(cfg)
     risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
     disabled_until = {asset: 0.0 for asset in cfg.assets}
-    log.info("Configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
-             ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
+    log.info("Cuenta=%s | configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
+             cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
     while True:
         allowed, reason = risk.can_trade()
@@ -91,10 +93,8 @@ def main():
                 if not allowed:
                     log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
                     return
-
                 if time.monotonic() < disabled_until[asset]:
                     continue
-
                 now = int(time.time())
                 try:
                     candles = client.get_candles(asset, timeframe_seconds, 80, now)
@@ -105,12 +105,10 @@ def main():
                     log.warning("%s | No disponible (%s); omitido durante 5 minutos",
                                 asset, asset_error)
                     continue
-
                 if not candles:
                     disabled_until[asset] = time.monotonic() + 300
                     log.warning("%s | Sin velas; omitido durante 5 minutos", asset)
                     continue
-
                 closed = [c for c in candles if int(c["from"]) + timeframe_seconds <= now]
                 signal = get_signal(closed, cfg.strategy)
                 if signal and signal.candle_time != last_signal_candles[asset]:
@@ -125,7 +123,7 @@ def main():
                             log.warning("%s | Orden rechazada: %s | omitido %d minutos",
                                         asset, order_id, cooldown // 60)
                         else:
-                            log.info("%s | Orden PRACTICE enviada: %s", asset, order_id)
+                            log.info("%s | Orden %s enviada: %s", asset, cfg.account, order_id)
                             raw_result = client.check_win_v4(order_id)
                             pnl = extract_pnl(raw_result)
                             risk.record(pnl)
