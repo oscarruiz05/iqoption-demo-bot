@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from iqoptionapi.stable_api import IQ_Option
+from assets import rejection_cooldown_seconds
 from config import Settings
 from risk import RiskManager, extract_pnl
 from strategy import get_signal
@@ -99,7 +100,10 @@ def main():
                     if cfg.enable_trading:
                         ok, order_id = client.buy(cfg.amount, asset, signal.direction, cfg.expiration_min)
                         if not ok:
-                            log.error("%s | Orden rechazada: %s", asset, order_id)
+                            cooldown = rejection_cooldown_seconds(order_id)
+                            disabled_until[asset] = time.monotonic() + cooldown
+                            log.warning("%s | Orden rechazada: %s | omitido %d minutos",
+                                        asset, order_id, cooldown // 60)
                         else:
                             log.info("%s | Orden PRACTICE enviada: %s", asset, order_id)
                             raw_result = client.check_win_v4(order_id)
