@@ -1,13 +1,14 @@
-# Bot automático IQ Option — solo PRACTICE
+# Bot automático IQ Option — PRACTICE o REAL
 
 Bot educativo para Windows. Lee velas cerradas, calcula EMA 20, EMA 50 y RSI 14,
-genera señales por tendencia/retroceso y puede enviar operaciones binarias a la
-cuenta de práctica. La integración usa una API comunitaria no oficial.
+genera señales por tendencia/retroceso y puede enviar operaciones binarias. La
+integración usa una API comunitaria no oficial.
 
 ## Seguridad incorporada
 
-- Selecciona `PRACTICE` directamente en el código; no existe opción configurable para REAL.
+- La cuenta predeterminada es `PRACTICE`.
 - La ejecución empieza desactivada (`ENABLE_TRADING=false`).
+- Operar en `REAL` exige cuatro controles simultáneos y valida el monto máximo.
 - Máximo de operaciones, pérdidas consecutivas y pérdida diaria.
 - Una sola operación por vela y por activo; sin martingala.
 - Varios pares configurables mediante una lista separada por comas.
@@ -29,29 +30,60 @@ La dependencia comunitaria de IQ Option instala por sí misma la versión antigu
 `websocket-client==0.56` que necesita. No la actualices de forma independiente,
 porque impediría resolver o podría romper la conexión de esta API no oficial.
 
-Completa tu correo y contraseña en `.env`. Para la primera conexión deja:
+## Cuenta PRACTICE
+
+Para observar señales sin enviar órdenes:
 
 ```dotenv
+IQ_ACCOUNT=PRACTICE
 ENABLE_TRADING=false
 ```
 
-Ejecuta en modo observación:
+Para operar únicamente con saldo de práctica:
 
-```powershell
-python main.py
+```dotenv
+IQ_ACCOUNT=PRACTICE
+ENABLE_TRADING=true
 ```
 
-Cuando veas `Conectado exclusivamente a PRACTICE`, detén con `Ctrl+C`, cambia a
-`ENABLE_TRADING=true` y vuelve a ejecutar. Empieza con `IQ_AMOUNT=1`.
+Ejecuta con `python main.py`. El registro debe mostrar `Conectado a PRACTICE`.
+
+## Cambio protegido a cuenta REAL
+
+Primero prueba la conexión real sin enviar órdenes:
+
+```dotenv
+IQ_ACCOUNT=REAL
+ENABLE_TRADING=false
+ENABLE_REAL_TRADING=false
+REAL_TRADING_CONFIRMATION=
+MAX_REAL_AMOUNT=1
+```
+
+Para permitir órdenes reales deben coincidir todos estos valores:
+
+```dotenv
+IQ_ACCOUNT=REAL
+IQ_AMOUNT=1
+ENABLE_TRADING=true
+ENABLE_REAL_TRADING=true
+REAL_TRADING_CONFIRMATION=ACEPTO_RIESGO_REAL
+MAX_REAL_AMOUNT=1
+```
+
+`IQ_AMOUNT` nunca puede superar `MAX_REAL_AMOUNT` en modo real. Si falta un
+control, la frase no coincide o el monto excede el límite, el bot termina antes
+de conectarse. Al arrancar en REAL muestra una advertencia visible. Para volver
+a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
+`ENABLE_REAL_TRADING=false` y borrar la confirmación.
 
 ## Configuración inicial
 
-- `IQ_ASSETS=AUDCAD-OTC,EURUSD-OTC,GBPUSD-OTC,EURGBP-OTC,EURJPY-OTC,GBPJPY-OTC,USDJPY-OTC,AUDUSD-OTC,NZDUSD-OTC,USDCAD-OTC`: pares separados por comas,
-  escritos como los espera la API. Se eliminan espacios, vacíos y duplicados.
+- `IQ_ASSETS=AUDCAD-OTC,EURUSD-OTC,GBPUSD-OTC,EURGBP-OTC,EURJPY-OTC,GBPJPY-OTC,USDJPY-OTC,AUDUSD-OTC,NZDUSD-OTC,USDCAD-OTC`: pares separados por comas.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
-- `IQ_STRATEGY=trend`: estrategia activa; admite `trend` o `support_channel`.
-- `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda mostrada por la cuenta demo.
+- `IQ_STRATEGY=trend`: admite `trend` o `support_channel`.
+- `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
 
 Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
 El bot recorre los pares en el orden configurado y mantiene una sola operación
@@ -73,7 +105,7 @@ Una señal necesita confluencia de todas estas condiciones:
 - RSI avanzando a favor, entre 48–62 para CALL o 38–52 para PUT.
 - Rango de confirmación no superior a 1,8 veces la mediana reciente.
 
-Estos filtros reducen la frecuencia de entradas; no garantizan mayor rentabilidad.
+Estos filtros reducen la frecuencia de entradas; no garantizan rentabilidad.
 Deben evaluarse con una muestra amplia en PRACTICE.
 
 ### Soportes y canales (`support_channel`)
@@ -109,6 +141,7 @@ python -m unittest -v
 ## Advertencias
 
 La API puede dejar de funcionar cuando IQ Option cambie su plataforma. Nunca
-compartas el `.env`, no reutilices esa contraseña en otros servicios y no ejecutes
-robots desconocidos. Que funcione técnicamente no demuestra que la estrategia sea
-rentable; evalúa al menos 100–200 operaciones demo y el payout antes de modificarla.
+compartas el `.env`, no reutilices esa contraseña y no ejecutes robots desconocidos.
+Las opciones binarias pueden causar la pérdida total de cada operación. Que el bot
+funcione técnicamente no demuestra que la estrategia sea rentable; valida una
+muestra amplia en PRACTICE antes de considerar dinero real.
