@@ -82,6 +82,7 @@ a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 - `IQ_ASSETS=AUDCAD-OTC,EURUSD-OTC,GBPUSD-OTC,EURGBP-OTC,EURJPY-OTC,GBPJPY-OTC,USDJPY-OTC,AUDUSD-OTC,NZDUSD-OTC,USDCAD-OTC`: pares separados por comas.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
+- `IQ_STRATEGY=trend`: admite `trend` o `support_channel`.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
 
 Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
@@ -106,6 +107,30 @@ Una señal necesita confluencia de todas estas condiciones:
 
 Estos filtros reducen la frecuencia de entradas; no garantizan rentabilidad.
 Deben evaluarse con una muestra amplia en PRACTICE.
+
+### Soportes y canales (`support_channel`)
+
+Esta estrategia busca rebotes, no rupturas. Requiere:
+
+- Soporte o resistencia formado por al menos dos pivotes históricos cercanos.
+- Contacto simultáneo con el nivel y el límite del canal de regresión.
+- Canal estable, sin una pendiente extrema.
+- Vela de rechazo con mecha de al menos 1,2 veces el cuerpo.
+- Cierre nuevamente dentro del nivel para descartar una ruptura.
+- RSI girando arriba entre 30–50 para CALL o abajo entre 50–70 para PUT.
+- Vela no superior a 1,8 veces el rango mediano reciente.
+
+Para probarla:
+
+```dotenv
+IQ_STRATEGY=support_channel
+IQ_TIMEFRAME_MIN=5
+IQ_EXPIRATION_MIN=5
+IQ_AMOUNT=1
+```
+
+`trades.csv` incluye la columna `strategy`. Si ya existe un archivo antiguo,
+se migra automáticamente y sus operaciones anteriores se marcan como `trend`.
 
 ## Pruebas
 
