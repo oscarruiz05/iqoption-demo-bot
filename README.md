@@ -9,7 +9,8 @@ cuenta de práctica. La integración usa una API comunitaria no oficial.
 - Selecciona `PRACTICE` directamente en el código; no existe opción configurable para REAL.
 - La ejecución empieza desactivada (`ENABLE_TRADING=false`).
 - Máximo de operaciones, pérdidas consecutivas y pérdida diaria.
-- Una sola operación por vela; sin martingala.
+- Una sola operación por vela y por activo; sin martingala.
+- Varios pares configurables mediante una lista separada por comas.
 - Credenciales en `.env`, excluidas de Git.
 
 ## Instalación en Windows (PowerShell)
@@ -45,12 +46,15 @@ Cuando veas `Conectado exclusivamente a PRACTICE`, detén con `Ctrl+C`, cambia a
 
 ## Configuración inicial
 
-- `IQ_ASSET=AUDCAD-OTC`: nombre del activo tal como lo espera la API.
+- `IQ_ASSETS=AUDCAD-OTC,EURUSD-OTC,GBPUSD-OTC`: pares separados por comas,
+  escritos como los espera la API. Se eliminan espacios, vacíos y duplicados.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda mostrada por la cuenta demo.
 
 Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
+El bot recorre los pares en el orden configurado y mantiene una sola operación
+abierta a la vez para no exceder los límites de riesgo.
 
 ## Pruebas
 

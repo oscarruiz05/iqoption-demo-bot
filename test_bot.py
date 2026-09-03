@@ -1,4 +1,5 @@
 import unittest
+from assets import parse_assets
 from risk import RiskManager, extract_pnl
 
 
@@ -34,6 +35,17 @@ class ResultTests(unittest.TestCase):
     def test_rejects_unfinished_result(self):
         with self.assertRaises(ValueError):
             extract_pnl((False, None))
+
+
+class ConfigTests(unittest.TestCase):
+    def test_parses_multiple_assets(self):
+        self.assertEqual(
+            parse_assets(" audcad-otc, EURUSD-OTC, audcad-otc, "),
+            ("AUDCAD-OTC", "EURUSD-OTC"),
+        )
+
+    def test_rejects_empty_items(self):
+        self.assertEqual(parse_assets(" , , "), ())
 
 
 if __name__ == "__main__":
