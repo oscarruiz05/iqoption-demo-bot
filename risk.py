@@ -1,6 +1,20 @@
 from dataclasses import dataclass
 
 
+def extract_pnl(result) -> float:
+    """Normalize iqoptionapi result formats such as (True, 0.85)."""
+    if isinstance(result, (tuple, list)):
+        if len(result) < 2:
+            raise ValueError(f"Resultado incompleto de IQ Option: {result!r}")
+        closed, pnl = result[0], result[1]
+        if closed is False or pnl is None:
+            raise ValueError(f"La operacion aun no tiene resultado: {result!r}")
+        return float(pnl)
+    if result is None:
+        raise ValueError("IQ Option devolvio un resultado vacio")
+    return float(result)
+
+
 @dataclass
 class RiskManager:
     max_trades: int
