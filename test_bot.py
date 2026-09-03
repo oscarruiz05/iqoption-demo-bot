@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from assets import parse_assets
+from assets import parse_assets, rejection_cooldown_seconds
 from risk import RiskManager, extract_pnl
 from strategy import detect_signal
 
@@ -48,6 +48,15 @@ class ConfigTests(unittest.TestCase):
 
     def test_rejects_empty_items(self):
         self.assertEqual(parse_assets(" , , "), ())
+
+    def test_suspended_asset_uses_long_cooldown(self):
+        self.assertEqual(
+            rejection_cooldown_seconds("Cannot purchase an option (active is suspended)"),
+            900,
+        )
+
+    def test_unknown_rejection_uses_default_cooldown(self):
+        self.assertEqual(rejection_cooldown_seconds("temporary error"), 300)
 
 
 def setup_frame(direction: str) -> pd.DataFrame:
