@@ -6,7 +6,7 @@ from pathlib import Path
 
 from iqoptionapi.stable_api import IQ_Option
 from config import Settings
-from risk import RiskManager
+from risk import RiskManager, extract_pnl
 from strategy import get_signal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
@@ -36,10 +36,25 @@ def connect(settings):
     return client
 
 
+def connect_with_retry(settings, attempts=5):
+    delay = 5
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return connect(settings)
+        except Exception as exc:
+            last_error = exc
+            log.warning("Conexion fallida (%d/%d): %s", attempt, attempts, exc)
+            if attempt < attempts:
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+    raise ConnectionError(f"No fue posible reconectar tras {attempts} intentos: {last_error}")
+
+
 def main():
     cfg = Settings()
     cfg.validate()
-    client = connect(cfg)
+    client = connect_with_retry(cfg)
     risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
     last_signal_candle = None
     timeframe_seconds = cfg.timeframe_min * 60
@@ -65,7 +80,8 @@ def main():
                         log.error("Orden rechazada: %s", order_id)
                     else:
                         log.info("Orden PRACTICE enviada: %s", order_id)
-                        pnl = float(client.check_win_v4(order_id))
+                        raw_result = client.check_win_v4(order_id)
+                        pnl = extract_pnl(raw_result)
                         risk.record(pnl)
                         save_trade(cfg.asset, signal, cfg.amount, order_id, pnl)
                         log.info("Resultado PnL=%.2f | diario=%.2f", pnl, risk.pnl)
@@ -77,7 +93,11 @@ def main():
             log.exception("Error recuperable: %s", exc)
             time.sleep(15)
             if not client.check_connect():
-                client = connect(cfg)
+                try:
+                    client = connect_with_retry(cfg)
+                except ConnectionError as reconnect_error:
+                    log.error("Reconexión agotada; se intentara nuevamente: %s", reconnect_error)
+                    time.sleep(60)
 
 
 if __name__ == "__main__":
