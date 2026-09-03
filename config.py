@@ -20,6 +20,7 @@ class Settings:
     amount: float = float(os.getenv("IQ_AMOUNT", "1"))
     timeframe_min: int = int(os.getenv("IQ_TIMEFRAME_MIN", "5"))
     expiration_min: int = int(os.getenv("IQ_EXPIRATION_MIN", "5"))
+    strategy: str = os.getenv("IQ_STRATEGY", "trend").strip().lower()
     enable_trading: bool = _bool("ENABLE_TRADING")
     max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
     max_consecutive_losses: int = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
@@ -36,3 +37,5 @@ class Settings:
             raise ValueError("IQ_TIMEFRAME_MIN debe ser 1, 5 o 15")
         if self.expiration_min not in {1, 5, 15}:
             raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
+        if self.strategy not in {"trend", "support_channel"}:
+            raise ValueError("IQ_STRATEGY debe ser trend o support_channel")

@@ -1,17 +1,6 @@
-from dataclasses import dataclass
 from typing import Optional
 import pandas as pd
-
-
-@dataclass(frozen=True)
-class Signal:
-    direction: str
-    candle_time: int
-    close: float
-    ema20: float
-    ema50: float
-    rsi14: float
-    reason: str
+from signals import Signal
 
 
 def add_indicators(candles: list[dict]) -> pd.DataFrame:
@@ -24,14 +13,24 @@ def add_indicators(candles: list[dict]) -> pd.DataFrame:
     loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
     rs = gain / loss.replace(0, float("nan"))
     df["rsi14"] = (100 - 100 / (1 + rs)).fillna(100)
+    previous_close = close.shift(1)
+    true_range = pd.concat([
+        df["max"].astype(float) - df["min"].astype(float),
+        (df["max"].astype(float) - previous_close).abs(),
+        (df["min"].astype(float) - previous_close).abs(),
+    ], axis=1).max(axis=1)
+    df["atr14"] = true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
     return df
 
 
-def get_signal(candles: list[dict]) -> Optional[Signal]:
+def get_signal(candles: list[dict], strategy_name: str = "trend") -> Optional[Signal]:
     """Uses only closed candles. The caller must omit the currently forming candle."""
     if len(candles) < 60:
         return None
     df = add_indicators(candles)
+    if strategy_name == "support_channel":
+        from support_channel import detect_support_channel_signal
+        return detect_support_channel_signal(df)
     return detect_signal(df)
 
 
