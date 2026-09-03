@@ -56,6 +56,20 @@ Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
 El bot recorre los pares en el orden configurado y mantiene una sola operación
 abierta a la vez para no exceder los límites de riesgo.
 
+## Filtros de entrada
+
+Una señal necesita confluencia de todas estas condiciones:
+
+- EMA 20 y EMA 50 separadas y con pendiente consistente durante varias velas.
+- Retroceso de la vela anterior hasta la zona de EMA 20.
+- Confirmación que cierre de nuevo del lado de la tendencia.
+- Cuerpo de confirmación de al menos 55% del rango y cierre cerca del extremo.
+- RSI avanzando a favor, entre 48–62 para CALL o 38–52 para PUT.
+- Rango de confirmación no superior a 1,8 veces la mediana reciente.
+
+Estos filtros reducen la frecuencia de entradas; no garantizan mayor rentabilidad.
+Deben evaluarse con una muestra amplia en PRACTICE.
+
 ## Pruebas
 
 ```powershell
