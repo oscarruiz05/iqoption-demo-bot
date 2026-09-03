@@ -24,12 +24,9 @@ def validate_account_mode(
         raise ValueError("IQ_ACCOUNT debe ser PRACTICE o REAL")
     if max_real_amount <= 0:
         raise ValueError("MAX_REAL_AMOUNT debe ser mayor que cero")
-
     if account == "REAL" and enable_trading:
         if not enable_real_trading:
-            raise ValueError(
-                "Para operar en REAL configura ENABLE_REAL_TRADING=true"
-            )
+            raise ValueError("Para operar en REAL configura ENABLE_REAL_TRADING=true")
         if confirmation != REAL_CONFIRMATION_PHRASE:
             raise ValueError(
                 f"Para operar en REAL configura REAL_TRADING_CONFIRMATION={REAL_CONFIRMATION_PHRASE}"
@@ -51,6 +48,7 @@ class Settings:
     amount: float = float(os.getenv("IQ_AMOUNT", "1"))
     timeframe_min: int = int(os.getenv("IQ_TIMEFRAME_MIN", "5"))
     expiration_min: int = int(os.getenv("IQ_EXPIRATION_MIN", "5"))
+    strategy: str = os.getenv("IQ_STRATEGY", "trend").strip().lower()
     enable_trading: bool = _bool("ENABLE_TRADING")
     enable_real_trading: bool = _bool("ENABLE_REAL_TRADING")
     real_trading_confirmation: str = os.getenv("REAL_TRADING_CONFIRMATION", "").strip()
@@ -70,6 +68,8 @@ class Settings:
             raise ValueError("IQ_TIMEFRAME_MIN debe ser 1, 5 o 15")
         if self.expiration_min not in {1, 5, 15}:
             raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
+        if self.strategy not in {"trend", "support_channel"}:
+            raise ValueError("IQ_STRATEGY debe ser trend o support_channel")
         validate_account_mode(
             self.account,
             self.enable_trading,
