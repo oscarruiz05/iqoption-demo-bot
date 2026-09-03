@@ -14,16 +14,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
                     handlers=[logging.StreamHandler(), logging.FileHandler("bot.log", encoding="utf-8")])
 log = logging.getLogger("iq-demo-bot")
 
+TRADE_HEADERS = ["utc_time", "asset", "direction", "amount", "order_id", "pnl", "rsi14", "strategy"]
+
+
+def ensure_trade_schema(path: Path) -> None:
+    if not path.exists():
+        return
+    with path.open("r", newline="", encoding="utf-8") as file:
+        rows = list(csv.reader(file))
+    if not rows or "strategy" in rows[0]:
+        return
+    migrated = [rows[0] + ["strategy"]]
+    migrated.extend(row + ["trend"] for row in rows[1:] if row)
+    temporary = path.with_name(path.name + ".tmp")
+    with temporary.open("w", newline="", encoding="utf-8") as file:
+        csv.writer(file).writerows(migrated)
+    temporary.replace(path)
+
 
 def save_trade(asset, signal, amount, order_id, pnl):
     path = Path("trades.csv")
+    ensure_trade_schema(path)
     new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         if new:
-            writer.writerow(["utc_time", "asset", "direction", "amount", "order_id", "pnl", "rsi14"])
+            writer.writerow(TRADE_HEADERS)
         writer.writerow([datetime.now(timezone.utc).isoformat(), asset, signal.direction,
-                         amount, order_id, pnl, round(signal.rsi14, 2)])
+                         amount, order_id, pnl, round(signal.rsi14, 2), signal.strategy])
 
 
 def connect(settings):
@@ -59,7 +77,8 @@ def main():
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
     disabled_until = {asset: 0.0 for asset in cfg.assets}
-    log.info("Configurados=%s | monto=%.2f | trading=%s", ", ".join(cfg.assets), cfg.amount, cfg.enable_trading)
+    log.info("Configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
+             ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
     while True:
         allowed, reason = risk.can_trade()
@@ -93,10 +112,11 @@ def main():
                     continue
 
                 closed = [c for c in candles if int(c["from"]) + timeframe_seconds <= now]
-                signal = get_signal(closed)
+                signal = get_signal(closed, cfg.strategy)
                 if signal and signal.candle_time != last_signal_candles[asset]:
                     last_signal_candles[asset] = signal.candle_time
-                    log.info("%s | SEÑAL %s | close=%.5f RSI=%.2f", asset, signal.direction.upper(), signal.close, signal.rsi14)
+                    log.info("%s | %s | SEÑAL %s | close=%.5f RSI=%.2f", asset,
+                             signal.strategy, signal.direction.upper(), signal.close, signal.rsi14)
                     if cfg.enable_trading:
                         ok, order_id = client.buy(cfg.amount, asset, signal.direction, cfg.expiration_min)
                         if not ok:
