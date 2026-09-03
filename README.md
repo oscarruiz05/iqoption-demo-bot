@@ -79,7 +79,7 @@ a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 
 ## Configuración inicial
 
-- `IQ_ASSETS=AUDCAD-OTC,EURUSD-OTC,GBPUSD-OTC,EURGBP-OTC,EURJPY-OTC,GBPJPY-OTC,USDJPY-OTC,AUDUSD-OTC,NZDUSD-OTC,USDCAD-OTC`: pares separados por comas.
+- `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
 - `IQ_STRATEGY=trend`: admite `trend` o `support_channel`.
@@ -89,7 +89,7 @@ Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
 El bot recorre los pares en el orden configurado y mantiene una sola operación
 abierta a la vez para no exceder los límites de riesgo.
 
-Cada par se valida directamente al solicitar sus velas. Si está cerrado, no existe
+Los pares normales suelen estar disponibles durante el horario del mercado Forex; los pares `-OTC` dependen de la oferta de IQ Option. No se presupone que uno esté abierto por el hecho de que el otro lo esté. Cada par se valida directamente al solicitar sus velas. Si está cerrado, no existe
 o no entrega datos, se omite durante cinco minutos sin detener los demás. El bot no
 usa `get_all_open_time()`, porque en `iqoptionapi 7.1.1` esa consulta también inicia
 el módulo digital y puede quedar esperando o lanzar errores internos.
