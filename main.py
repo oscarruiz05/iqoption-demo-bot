@@ -6,6 +6,7 @@ from pathlib import Path
 
 from iqoptionapi.stable_api import IQ_Option
 from config import Settings
+from market import filter_open_assets
 from risk import RiskManager, extract_pnl
 from strategy import get_signal
 
@@ -30,7 +31,6 @@ def connect(settings):
     ok, reason = client.connect()
     if not ok:
         raise ConnectionError(f"IQ Option rechazo la conexion: {reason}")
-    # Safety invariant: this project never selects REAL.
     client.change_balance("PRACTICE")
     log.info("Conectado exclusivamente a PRACTICE | saldo: %.2f", client.get_balance())
     return client
@@ -51,6 +51,21 @@ def connect_with_retry(settings, attempts=5):
     raise ConnectionError(f"No fue posible reconectar tras {attempts} intentos: {last_error}")
 
 
+def resolve_open_assets(client, configured_assets, previous=()):
+    try:
+        open_times = client.get_all_open_time()
+        opened, unavailable = filter_open_assets(open_times, configured_assets)
+        log.info("Pares abiertos=%s", ", ".join(opened) if opened else "ninguno")
+        if unavailable:
+            log.info("Pares omitidos por estar cerrados/no disponibles=%s", ", ".join(unavailable))
+        return opened
+    except Exception as exc:
+        fallback = previous or configured_assets
+        log.warning("No se pudo actualizar disponibilidad (%s); se conserva=%s",
+                    exc, ", ".join(fallback))
+        return fallback
+
+
 def main():
     cfg = Settings()
     cfg.validate()
@@ -58,7 +73,9 @@ def main():
     risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
-    log.info("Activos=%s | monto=%.2f | trading=%s", ", ".join(cfg.assets), cfg.amount, cfg.enable_trading)
+    active_assets = resolve_open_assets(client, cfg.assets)
+    last_market_refresh = time.monotonic()
+    log.info("Configurados=%s | monto=%.2f | trading=%s", ", ".join(cfg.assets), cfg.amount, cfg.enable_trading)
 
     while True:
         allowed, reason = risk.can_trade()
@@ -66,7 +83,18 @@ def main():
             log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
             break
         try:
-            for asset in cfg.assets:
+            if time.monotonic() - last_market_refresh >= 1800:
+                active_assets = resolve_open_assets(client, cfg.assets, active_assets)
+                last_market_refresh = time.monotonic()
+
+            if not active_assets:
+                log.warning("No hay pares abiertos; nueva comprobacion en 60 segundos")
+                time.sleep(60)
+                active_assets = resolve_open_assets(client, cfg.assets)
+                last_market_refresh = time.monotonic()
+                continue
+
+            for asset in active_assets:
                 allowed, reason = risk.can_trade()
                 if not allowed:
                     log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
@@ -74,7 +102,6 @@ def main():
 
                 now = int(time.time())
                 candles = client.get_candles(asset, timeframe_seconds, 80, now)
-                # API may return the candle still forming; keep only definitely closed candles.
                 closed = [c for c in candles if int(c["from"]) + timeframe_seconds <= now]
                 signal = get_signal(closed)
                 if signal and signal.candle_time != last_signal_candles[asset]:
