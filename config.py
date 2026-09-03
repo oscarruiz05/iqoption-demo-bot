@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from dotenv import load_dotenv
+from assets import parse_assets
 
 load_dotenv()
 
@@ -13,7 +14,9 @@ def _bool(name: str, default: bool = False) -> bool:
 class Settings:
     email: str = os.getenv("IQ_EMAIL", "")
     password: str = os.getenv("IQ_PASSWORD", "")
-    asset: str = os.getenv("IQ_ASSET", "AUDCAD-OTC").upper()
+    assets: tuple[str, ...] = parse_assets(
+        os.getenv("IQ_ASSETS", os.getenv("IQ_ASSET", "AUDCAD-OTC"))
+    )
     amount: float = float(os.getenv("IQ_AMOUNT", "1"))
     timeframe_min: int = int(os.getenv("IQ_TIMEFRAME_MIN", "5"))
     expiration_min: int = int(os.getenv("IQ_EXPIRATION_MIN", "5"))
@@ -25,6 +28,8 @@ class Settings:
     def validate(self) -> None:
         if not self.email or not self.password:
             raise ValueError("Completa IQ_EMAIL e IQ_PASSWORD en el archivo .env")
+        if not self.assets:
+            raise ValueError("Configura al menos un par en IQ_ASSETS")
         if self.amount <= 0 or self.max_daily_loss <= 0:
             raise ValueError("Los montos deben ser mayores que cero")
         if self.timeframe_min not in {1, 5, 15}:
