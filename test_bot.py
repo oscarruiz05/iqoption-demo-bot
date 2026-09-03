@@ -1,5 +1,5 @@
 import unittest
-from risk import RiskManager
+from risk import RiskManager, extract_pnl
 
 
 class RiskTests(unittest.TestCase):
@@ -19,6 +19,21 @@ class RiskTests(unittest.TestCase):
         risk = RiskManager(10, 9, 2)
         risk.record(-2)
         self.assertFalse(risk.can_trade()[0])
+
+
+class ResultTests(unittest.TestCase):
+    def test_extracts_pnl_from_tuple(self):
+        self.assertEqual(extract_pnl((True, 0.85)), 0.85)
+
+    def test_extracts_loss_from_tuple(self):
+        self.assertEqual(extract_pnl((True, -1)), -1.0)
+
+    def test_accepts_numeric_legacy_result(self):
+        self.assertEqual(extract_pnl(0), 0.0)
+
+    def test_rejects_unfinished_result(self):
+        with self.assertRaises(ValueError):
+            extract_pnl((False, None))
 
 
 if __name__ == "__main__":
