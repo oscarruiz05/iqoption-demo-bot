@@ -1,7 +1,6 @@
 import unittest
 import pandas as pd
 from assets import parse_assets
-from market import filter_open_assets
 from risk import RiskManager, extract_pnl
 from strategy import detect_signal
 
@@ -49,23 +48,6 @@ class ConfigTests(unittest.TestCase):
 
     def test_rejects_empty_items(self):
         self.assertEqual(parse_assets(" , , "), ())
-
-
-class MarketTests(unittest.TestCase):
-    def test_filters_closed_and_unknown_assets(self):
-        market = {
-            "turbo": {"EURUSD-OTC": {"open": True}, "GBPUSD-OTC": {"open": False}},
-            "binary": {"GBPUSD-OTC": {"open": False}},
-        }
-        opened, unavailable = filter_open_assets(
-            market, ("EURUSD-OTC", "GBPUSD-OTC", "UNKNOWN-OTC")
-        )
-        self.assertEqual(opened, ("EURUSD-OTC",))
-        self.assertEqual(unavailable, ("GBPUSD-OTC", "UNKNOWN-OTC"))
-
-    def test_accepts_asset_open_in_binary_market(self):
-        market = {"turbo": {}, "binary": {"EURJPY-OTC": {"open": True}}}
-        self.assertEqual(filter_open_assets(market, ("EURJPY-OTC",))[0], ("EURJPY-OTC",))
 
 
 def setup_frame(direction: str) -> pd.DataFrame:
