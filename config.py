@@ -53,7 +53,7 @@ class Settings:
     enable_real_trading: bool = _bool("ENABLE_REAL_TRADING")
     real_trading_confirmation: str = os.getenv("REAL_TRADING_CONFIRMATION", "").strip()
     max_real_amount: float = float(os.getenv("MAX_REAL_AMOUNT", "1"))
-    min_candles_between_trades: int = int(os.getenv("MIN_CANDLES_BETWEEN_TRADES", "3"))\n    max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
+    min_candles_between_trades: int = int(os.getenv("MIN_CANDLES_BETWEEN_TRADES", "5"))\n    max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
     max_consecutive_losses: int = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "5"))
 
