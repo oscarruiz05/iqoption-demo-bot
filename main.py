@@ -113,6 +113,9 @@ def main():
                 signal = get_signal(closed, cfg.strategy)
                 if signal and signal.candle_time != last_signal_candles[asset]:
                     last_signal_candles[asset] = signal.candle_time
+                    if signal.candle_time < next_trade_candle[asset]:
+                        log.info("%s | Señal omitida por espera entre operaciones", asset)
+                        continue
                     log.info("%s | %s | SEÑAL %s | close=%.5f RSI=%.2f", asset,
                              signal.strategy, signal.direction.upper(), signal.close, signal.rsi14)
                     if cfg.enable_trading:
@@ -127,6 +130,10 @@ def main():
                             raw_result = client.check_win_v4(order_id)
                             pnl = extract_pnl(raw_result)
                             risk.record(pnl)
+                            next_trade_candle[asset] = (
+                                signal.candle_time
+                                + cfg.min_candles_between_trades * timeframe_seconds
+                            )
                             save_trade(asset, signal, cfg.amount, order_id, pnl)
                             log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
             time.sleep(10)
