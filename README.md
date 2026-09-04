@@ -96,17 +96,21 @@ el módulo digital y puede quedar esperando o lanzar errores internos.
 
 ## Filtros de entrada
 
-Una señal necesita confluencia de todas estas condiciones:
+Una señal de tendencia necesita confluencia de todas estas condiciones:
 
-- EMA 20 y EMA 50 separadas y con pendiente consistente durante varias velas.
-- Retroceso de la vela anterior hasta la zona de EMA 20.
-- Confirmación que cierre de nuevo del lado de la tendencia.
-- Cuerpo de confirmación de al menos 55% del rango y cierre cerca del extremo.
-- RSI avanzando a favor, entre 48–62 para CALL o 38–52 para PUT.
-- Rango de confirmación no superior a 1,8 veces la mediana reciente.
+- ADX 14 de al menos 22 y dirección DI coherente con CALL o PUT.
+- Separación EMA 20/50 y pendiente EMA 20 normalizadas mediante ATR 14.
+- Retroceso hasta EMA 20 mediante una vela contraria a la tendencia.
+- Confirmación que recupere la apertura del retroceso y cierre nuevamente del lado de EMA 20.
+- Cuerpo de confirmación de al menos 60% y cierre en el 20% extremo de la vela.
+- RSI avanzando a favor, entre 52–60 para CALL o 40–48 para PUT.
+- Rango entre 0,55 y 1,60 veces la mediana, evitando velas sin movimiento o explosivas.
+- Precio no extendido más de 0,8 ATR respecto a EMA 20.
 
-Estos filtros reducen la frecuencia de entradas; no garantizan rentabilidad.
-Deben evaluarse con una muestra amplia en PRACTICE.
+Después de completar una operación, el mismo par espera
+`MIN_CANDLES_BETWEEN_TRADES=5` antes de poder volver a entrar. Estos filtros
+reducen considerablemente la frecuencia; no garantizan rentabilidad y deben
+evaluarse con una muestra amplia en PRACTICE.
 
 ### Soportes y canales (`support_channel`)
 
