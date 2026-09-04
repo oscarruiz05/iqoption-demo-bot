@@ -25,6 +25,11 @@ class RiskTests(unittest.TestCase):
         risk.record(-2)
         self.assertFalse(risk.can_trade()[0])
 
+    def test_blocks_trade_that_would_exceed_daily_loss(self):
+        risk = RiskManager(10, 9, 5)
+        risk.record(-3)
+        self.assertFalse(risk.can_trade(next_stake=3)[0])
+
 
 class ResultTests(unittest.TestCase):
     def test_extracts_pnl_from_tuple(self):
