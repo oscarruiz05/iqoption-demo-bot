@@ -78,7 +78,7 @@ def main():
     risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
-    disabled_until = {asset: 0.0 for asset in cfg.assets}
+    disabled_until = {asset: 0.0 for asset in cfg.assets}\n    next_trade_candle = {asset: 0 for asset in cfg.assets}
     log.info("Cuenta=%s | configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
