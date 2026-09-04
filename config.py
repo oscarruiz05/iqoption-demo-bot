@@ -53,7 +53,7 @@ class Settings:
     enable_real_trading: bool = _bool("ENABLE_REAL_TRADING")
     real_trading_confirmation: str = os.getenv("REAL_TRADING_CONFIRMATION", "").strip()
     max_real_amount: float = float(os.getenv("MAX_REAL_AMOUNT", "1"))
-    max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
+    min_candles_between_trades: int = int(os.getenv("MIN_CANDLES_BETWEEN_TRADES", "5"))\n    max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
     max_consecutive_losses: int = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "5"))
 
@@ -68,7 +68,7 @@ class Settings:
             raise ValueError("IQ_TIMEFRAME_MIN debe ser 1, 5 o 15")
         if self.expiration_min not in {1, 5, 15}:
             raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
-        if self.strategy not in {"trend", "support_channel"}:
+        if self.min_candles_between_trades < 1:\n            raise ValueError("MIN_CANDLES_BETWEEN_TRADES debe ser al menos 1")\n        if self.strategy not in {"trend", "support_channel"}:
             raise ValueError("IQ_STRATEGY debe ser trend o support_channel")
         validate_account_mode(
             self.account,

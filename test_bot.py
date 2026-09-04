@@ -25,6 +25,11 @@ class RiskTests(unittest.TestCase):
         risk.record(-2)
         self.assertFalse(risk.can_trade()[0])
 
+    def test_blocks_trade_that_would_exceed_daily_loss(self):
+        risk = RiskManager(10, 9, 5)
+        risk.record(-3)
+        self.assertFalse(risk.can_trade(next_stake=3)[0])
+
 
 class ResultTests(unittest.TestCase):
     def test_extracts_pnl_from_tuple(self):
@@ -132,6 +137,17 @@ class StrategyTests(unittest.TestCase):
     def test_rejects_rsi_without_momentum(self):
         frame = setup_frame("call")
         frame.loc[frame.index[-1], "rsi14"] = 49
+        self.assertIsNone(detect_signal(frame))
+
+    def test_rejects_weak_adx(self):
+        frame = setup_frame("call")
+        frame["adx14"] = 15
+        self.assertIsNone(detect_signal(frame))
+
+    def test_requires_opposite_pullback_candle(self):
+        frame = setup_frame("call")
+        previous = frame.index[-2]
+        frame.loc[previous, "open"] = frame.loc[previous, "close"] - 0.0002
         self.assertIsNone(detect_signal(frame))
 
 

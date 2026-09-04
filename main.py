@@ -78,18 +78,18 @@ def main():
     risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
-    disabled_until = {asset: 0.0 for asset in cfg.assets}
+    disabled_until = {asset: 0.0 for asset in cfg.assets}\n    next_trade_candle = {asset: 0 for asset in cfg.assets}
     log.info("Cuenta=%s | configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
     while True:
-        allowed, reason = risk.can_trade()
+        allowed, reason = risk.can_trade(cfg.amount)
         if not allowed:
             log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
             break
         try:
             for asset in cfg.assets:
-                allowed, reason = risk.can_trade()
+                allowed, reason = risk.can_trade(cfg.amount)
                 if not allowed:
                     log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
                     return
@@ -113,6 +113,9 @@ def main():
                 signal = get_signal(closed, cfg.strategy)
                 if signal and signal.candle_time != last_signal_candles[asset]:
                     last_signal_candles[asset] = signal.candle_time
+                    if signal.candle_time < next_trade_candle[asset]:
+                        log.info("%s | Señal omitida por espera entre operaciones", asset)
+                        continue
                     log.info("%s | %s | SEÑAL %s | close=%.5f RSI=%.2f", asset,
                              signal.strategy, signal.direction.upper(), signal.close, signal.rsi14)
                     if cfg.enable_trading:
@@ -127,6 +130,10 @@ def main():
                             raw_result = client.check_win_v4(order_id)
                             pnl = extract_pnl(raw_result)
                             risk.record(pnl)
+                            next_trade_candle[asset] = (
+                                signal.candle_time
+                                + cfg.min_candles_between_trades * timeframe_seconds
+                            )
                             save_trade(asset, signal, cfg.amount, order_id, pnl)
                             log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
             time.sleep(10)

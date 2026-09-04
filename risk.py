@@ -24,13 +24,15 @@ class RiskManager:
     consecutive_losses: int = 0
     pnl: float = 0.0
 
-    def can_trade(self) -> tuple[bool, str]:
+    def can_trade(self, next_stake: float = 0.0) -> tuple[bool, str]:
         if self.trades >= self.max_trades:
             return False, "maximo de operaciones diarias alcanzado"
         if self.consecutive_losses >= self.max_consecutive_losses:
             return False, "maximo de perdidas consecutivas alcanzado"
         if self.pnl <= -self.max_daily_loss:
             return False, "perdida diaria maxima alcanzada"
+        if next_stake > 0 and self.pnl - next_stake < -self.max_daily_loss:
+            return False, "la siguiente operacion excederia la perdida diaria maxima"
         return True, "ok"
 
     def record(self, pnl: float) -> None:
