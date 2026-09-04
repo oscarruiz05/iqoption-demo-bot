@@ -68,7 +68,12 @@ def detect_signal(df: pd.DataFrame) -> Optional[Signal]:
         return None
 
     adx = float(last.get("adx14", 100.0))
-    if "plus_di14" in df.columns and "minus_di14" in df.columns:\n        plus_di = float(last["plus_di14"])\n        minus_di = float(last["minus_di14"])\n    else:\n        plus_di = 100.0 if last["ema20"] > last["ema50"] else 0.0\n        minus_di = 100.0 if last["ema20"] < last["ema50"] else 0.0
+    if "plus_di14" in df.columns and "minus_di14" in df.columns:
+        plus_di = float(last["plus_di14"])
+        minus_di = float(last["minus_di14"])
+    else:
+        plus_di = 100.0 if last["ema20"] > last["ema50"] else 0.0
+        minus_di = 100.0 if last["ema20"] < last["ema50"] else 0.0
     ema_distance = abs(last["ema20"] - last["ema50"])
     ema20_slope = abs(last["ema20"] - trend_reference["ema20"])
 
