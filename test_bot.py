@@ -134,6 +134,17 @@ class StrategyTests(unittest.TestCase):
         frame.loc[frame.index[-1], "rsi14"] = 49
         self.assertIsNone(detect_signal(frame))
 
+    def test_rejects_weak_adx(self):
+        frame = setup_frame("call")
+        frame["adx14"] = 15
+        self.assertIsNone(detect_signal(frame))
+
+    def test_requires_opposite_pullback_candle(self):
+        frame = setup_frame("call")
+        previous = frame.index[-2]
+        frame.loc[previous, "open"] = frame.loc[previous, "close"] - 0.0002
+        self.assertIsNone(detect_signal(frame))
+
 
 class SupportChannelTests(unittest.TestCase):
     def test_clusters_levels_with_repeated_touches(self):
