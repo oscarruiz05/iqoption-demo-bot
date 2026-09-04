@@ -83,13 +83,13 @@ def main():
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
     while True:
-        allowed, reason = risk.can_trade()
+        allowed, reason = risk.can_trade(cfg.amount)
         if not allowed:
             log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
             break
         try:
             for asset in cfg.assets:
-                allowed, reason = risk.can_trade()
+                allowed, reason = risk.can_trade(cfg.amount)
                 if not allowed:
                     log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
                     return
