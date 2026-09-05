@@ -6,7 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from iqoptionapi.stable_api import IQ_Option
-from assets import rejection_cooldown_seconds
+from assets import is_connection_error, next_asset_batch, rejection_cooldown_seconds
 from config import Settings
 from performance import analyze_pnls, format_report, read_trade_pnls
 from payout import PayoutCache
@@ -142,6 +142,7 @@ def main():
     timeframe_seconds = cfg.timeframe_min * 60
     disabled_until = {asset: 0.0 for asset in cfg.assets}
     next_trade_candle = {asset: 0 for asset in cfg.assets}
+    asset_cursor = 0
     log.info("Cuenta=%s | configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
@@ -159,7 +160,12 @@ def main():
                 log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
                 break
         try:
-            for asset in cfg.assets:
+            if not client.check_connect():
+                raise ConnectionError("WebSocket desconectado antes de consultar velas")
+            asset_batch, asset_cursor = next_asset_batch(
+                cfg.assets, asset_cursor, cfg.asset_batch_size
+            )
+            for asset in asset_batch:
                 if cfg.enable_trading:
                     allowed, reason = risk.can_trade(cfg.amount)
                     if not allowed:
@@ -170,9 +176,13 @@ def main():
                 now = int(time.time())
                 try:
                     candles = client.get_candles(asset, timeframe_seconds, 80, now)
+                    if cfg.asset_request_delay_seconds:
+                        time.sleep(cfg.asset_request_delay_seconds)
                 except Exception as asset_error:
-                    if not client.check_connect():
-                        raise ConnectionError("Conexion perdida consultando velas") from asset_error
+                    if is_connection_error(asset_error) or not client.check_connect():
+                        raise ConnectionError(
+                            f"Conexion perdida consultando velas de {asset}"
+                        ) from asset_error
                     disabled_until[asset] = time.monotonic() + 300
                     log.warning("%s | No disponible (%s); omitido durante 5 minutos",
                                 asset, asset_error)
@@ -232,14 +242,23 @@ def main():
             break
         except Exception as exc:
             log.exception("Error recuperable: %s", exc)
-            time.sleep(15)
-            if not client.check_connect():
+            reconnect_required = isinstance(exc, ConnectionError)
+            if not reconnect_required:
+                try:
+                    reconnect_required = not client.check_connect()
+                except Exception:
+                    reconnect_required = True
+            if reconnect_required:
+                time.sleep(5)
                 try:
                     client = connect_with_retry(cfg)
                     payouts = PayoutCache(client)
+                    log.info("Conexion restablecida; se reanuda el escaneo por lotes")
                 except ConnectionError as reconnect_error:
                     log.error("Reconexión agotada; se intentara nuevamente: %s", reconnect_error)
                     time.sleep(60)
+            else:
+                time.sleep(15)
 
 
 if __name__ == "__main__":
