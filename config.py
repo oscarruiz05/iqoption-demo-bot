@@ -60,11 +60,16 @@ class Settings:
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "5"))
     max_risk_per_trade_pct: float = float(os.getenv("MAX_RISK_PER_TRADE_PCT", "1"))
     max_daily_loss_pct: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "3"))
+    show_practice_risk_warnings: bool = _bool("SHOW_PRACTICE_RISK_WARNINGS", False)
     require_validation_for_real: bool = _bool("REQUIRE_VALIDATION_FOR_REAL", True)
     validation_min_trades: int = int(os.getenv("VALIDATION_MIN_TRADES", "200"))
     validation_min_edge: float = float(os.getenv("VALIDATION_MIN_EDGE", "0.02"))
     min_payout: float = float(os.getenv("MIN_PAYOUT", "0.85"))
     risk_timezone: str = os.getenv("RISK_TIMEZONE", "UTC").strip()
+    asset_batch_size: int = int(os.getenv("ASSET_BATCH_SIZE", "5"))
+    asset_request_delay_seconds: float = float(
+        os.getenv("ASSET_REQUEST_DELAY_SECONDS", "0.75")
+    )
 
     def validate(self) -> None:
         if not self.email or not self.password:
@@ -79,6 +84,10 @@ class Settings:
             raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
         if self.min_candles_between_trades < 1:
             raise ValueError("MIN_CANDLES_BETWEEN_TRADES debe ser al menos 1")
+        if self.asset_batch_size < 1:
+            raise ValueError("ASSET_BATCH_SIZE debe ser al menos 1")
+        if not 0 <= self.asset_request_delay_seconds <= 10:
+            raise ValueError("ASSET_REQUEST_DELAY_SECONDS debe estar entre 0 y 10")
         if not 0 < self.max_risk_per_trade_pct <= 2:
             raise ValueError("MAX_RISK_PER_TRADE_PCT debe estar entre 0 y 2")
         if not 0 < self.max_daily_loss_pct <= 10:

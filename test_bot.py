@@ -5,7 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import pandas as pd
 import numpy as np
-from assets import parse_assets, rejection_cooldown_seconds
+from assets import (
+    is_connection_error, next_asset_batch, parse_assets, rejection_cooldown_seconds,
+)
 from backtest import run_backtest
 from config import REAL_CONFIRMATION_PHRASE, validate_account_mode
 from performance import analyze_pnls, wilson_interval
@@ -157,6 +159,24 @@ class ConfigTests(unittest.TestCase):
 
     def test_unknown_rejection_uses_default_cooldown(self):
         self.assertEqual(rejection_cooldown_seconds("temporary error"), 300)
+
+    def test_detects_reconnect_error_even_if_health_check_is_stale(self):
+        self.assertTrue(is_connection_error("get_candles need reconnect"))
+        self.assertTrue(is_connection_error("[WinError 10054] connection interrupted"))
+        self.assertFalse(is_connection_error("active is suspended"))
+
+    def test_asset_batches_rotate_without_duplicates(self):
+        assets = ("A", "B", "C", "D", "E", "F")
+        first, cursor = next_asset_batch(assets, 0, 2)
+        second, cursor = next_asset_batch(assets, cursor, 2)
+        third, cursor = next_asset_batch(assets, cursor, 2)
+        self.assertEqual(first + second + third, assets)
+        self.assertEqual(cursor, 0)
+
+    def test_batch_size_is_limited_to_available_assets(self):
+        batch, cursor = next_asset_batch(("A", "B"), 0, 5)
+        self.assertEqual(batch, ("A", "B"))
+        self.assertEqual(cursor, 0)
 
     def test_practice_does_not_require_real_confirmation(self):
         validate_account_mode("PRACTICE", True, False, "", 10, 1)
