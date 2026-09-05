@@ -108,13 +108,14 @@ def main():
         )
         if cfg.account == "REAL":
             raise ValueError(message)
-        log.warning("PRACTICE | %s; se respeta el monto elegido por el usuario", message)
+        if cfg.show_practice_risk_warnings:
+            log.warning("PRACTICE | %s; se respeta el monto elegido por el usuario", message)
     percentage_daily_loss = balance * cfg.max_daily_loss_pct / 100
     if cfg.account == "REAL":
         effective_daily_loss = min(cfg.max_daily_loss, percentage_daily_loss)
     else:
         effective_daily_loss = cfg.max_daily_loss
-        if cfg.max_daily_loss > percentage_daily_loss:
+        if cfg.show_practice_risk_warnings and cfg.max_daily_loss > percentage_daily_loss:
             log.warning(
                 "PRACTICE | MAX_DAILY_LOSS=%.2f supera %.1f%% del saldo (%.2f); "
                 "se respeta el límite absoluto elegido",
