@@ -1,9 +1,19 @@
 import unittest
+from datetime import date
+from zoneinfo import ZoneInfo
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import pandas as pd
+import numpy as np
 from assets import parse_assets, rejection_cooldown_seconds
+from backtest import run_backtest
 from config import REAL_CONFIRMATION_PHRASE, validate_account_mode
-from risk import RiskManager, extract_pnl
+from performance import analyze_pnls, wilson_interval
+from payout import PayoutCache, option_kind
+from model_research import fit_logistic, probabilities, trade_pnls
+from risk import RiskManager, extract_pnl, load_daily_risk
 from strategy import detect_signal
+from signals import Signal
 from support_channel import bearish_rejection, bullish_rejection, cluster_levels
 
 
@@ -29,6 +39,89 @@ class RiskTests(unittest.TestCase):
         risk = RiskManager(10, 9, 5)
         risk.record(-3)
         self.assertFalse(risk.can_trade(next_stake=3)[0])
+
+    def test_restart_restores_only_selected_utc_day(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "trades.csv"
+            path.write_text(
+                "utc_time,pnl\n"
+                "2026-09-03T23:59:00+00:00,-1\n"
+                "2026-09-04T00:01:00+00:00,-2\n"
+                "2026-09-04T00:02:00+00:00,0.8\n",
+                encoding="utf-8",
+            )
+            risk = load_daily_risk(path, 10, 3, 5, day=date(2026, 9, 4))
+            self.assertEqual(risk.trades, 2)
+            self.assertAlmostEqual(risk.pnl, -1.2)
+            self.assertEqual(risk.consecutive_losses, 0)
+
+    def test_daily_boundary_uses_configured_timezone(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "trades.csv"
+            path.write_text(
+                "utc_time,pnl\n2026-09-04T03:30:00+00:00,-3\n"
+                "2026-09-04T05:30:00+00:00,0.8\n",
+                encoding="utf-8",
+            )
+            risk = load_daily_risk(
+                path, 10, 3, 5, day=date(2026, 9, 4),
+                day_timezone=ZoneInfo("America/Bogota"),
+            )
+            self.assertEqual(risk.trades, 1)
+            self.assertAlmostEqual(risk.pnl, 0.8)
+
+
+class PerformanceTests(unittest.TestCase):
+    def test_break_even_reflects_asymmetric_payout(self):
+        report = analyze_pnls([0.82, -1.0] * 20, minimum_trades=1, minimum_edge=0)
+        self.assertAlmostEqual(report.break_even_win_rate, 1 / 1.82)
+        self.assertFalse(report.validated)
+
+    def test_small_profitable_sample_is_not_validated(self):
+        report = analyze_pnls([0.82] * 8 + [-1.0] * 2, minimum_trades=200)
+        self.assertFalse(report.validated)
+        self.assertTrue(any("muestra insuficiente" in reason for reason in report.reasons))
+
+    def test_wilson_interval_contains_observed_rate(self):
+        low, high = wilson_interval(60, 100)
+        self.assertLess(low, 0.60)
+        self.assertGreater(high, 0.60)
+
+
+class PayoutTests(unittest.TestCase):
+    def test_uses_turbo_up_to_five_minutes(self):
+        self.assertEqual(option_kind(5), "turbo")
+        self.assertEqual(option_kind(15), "binary")
+
+    def test_reads_and_caches_payout(self):
+        class Client:
+            calls = 0
+
+            def get_all_profit(self):
+                self.calls += 1
+                return {"EURUSD": {"turbo": 0.87}}
+
+        client = Client()
+        cache = PayoutCache(client, ttl_seconds=60)
+        self.assertEqual(cache.get("EURUSD", 5), 0.87)
+        self.assertEqual(cache.get("EURUSD", 5), 0.87)
+        self.assertEqual(client.calls, 1)
+
+
+class ModelResearchTests(unittest.TestCase):
+    def test_regularized_model_learns_simple_direction(self):
+        feature = np.tile(np.array([-2.0, -1.0, 1.0, 2.0]), 50)
+        x = np.column_stack([np.ones(len(feature)), feature])
+        y = (feature > 0).astype(float)
+        prediction = probabilities(x, fit_logistic(x, y, l2=0.01))
+        self.assertLess(prediction[0], 0.5)
+        self.assertGreater(prediction[-1], 0.5)
+
+    def test_probability_threshold_uses_binary_payout(self):
+        pnls = trade_pnls(
+            np.array([0.8, 0.2, 0.51]), np.array([1.0, 1.0, 1.0]), 0.6, 0.85
+        )
+        self.assertEqual(pnls, [0.85, -1.0])
 
 
 class ResultTests(unittest.TestCase):
@@ -113,12 +206,12 @@ def setup_frame(direction: str) -> pd.DataFrame:
         prev.update(open=prev["ema20"] + 0.0008, close=prev["ema20"] - 0.0001,
                     min=prev["ema20"] - 0.0002, max=prev["ema20"] + 0.0010, rsi14=50)
         last.update(open=last["ema20"] - 0.0001, close=last["ema20"] + 0.0008,
-                    min=last["ema20"] - 0.0002, max=last["ema20"] + 0.0009, rsi14=55)
+                    min=last["ema20"] - 0.00025, max=last["ema20"] + 0.00095, rsi14=55)
     else:
         prev.update(open=prev["ema20"] - 0.0008, close=prev["ema20"] + 0.0001,
                     min=prev["ema20"] - 0.0010, max=prev["ema20"] + 0.0002, rsi14=50)
         last.update(open=last["ema20"] + 0.0001, close=last["ema20"] - 0.0008,
-                    min=last["ema20"] - 0.0009, max=last["ema20"] + 0.0002, rsi14=45)
+                    min=last["ema20"] - 0.00095, max=last["ema20"] + 0.00025, rsi14=45)
     return pd.DataFrame(rows)
 
 
@@ -168,6 +261,54 @@ class SupportChannelTests(unittest.TestCase):
     def test_detects_bearish_rejection_candle(self):
         row = {"open": 1.1006, "close": 1.1002, "min": 1.1001, "max": 1.1015}
         self.assertTrue(bearish_rejection(row))
+
+
+class BacktestTests(unittest.TestCase):
+    def test_flat_market_produces_no_trades(self):
+        candles = [
+            {"from": index * 300, "open": 1.0, "close": 1.0, "min": 1.0, "max": 1.0}
+            for index in range(100)
+        ]
+        result = run_backtest(candles, payout=0.82)
+        self.assertEqual(result.report.trades, 0)
+
+    def test_backtest_never_passes_more_than_live_window(self):
+        import backtest
+
+        observed_lengths = []
+        original = backtest.get_signal
+        backtest.get_signal = lambda candles, strategy: observed_lengths.append(len(candles))
+        try:
+            run_backtest([
+                {"from": index * 300, "open": 1.0, "close": 1.0,
+                 "min": 1.0, "max": 1.0}
+                for index in range(200)
+            ])
+        finally:
+            backtest.get_signal = original
+        self.assertTrue(observed_lengths)
+        self.assertLessEqual(max(observed_lengths), 80)
+
+    def test_skips_entry_across_timestamp_gap(self):
+        import backtest
+
+        candles = [
+            {"from": index * 300, "open": 1.0, "close": 1.1,
+             "min": 0.9, "max": 1.2}
+            for index in range(63)
+        ]
+        candles[60]["from"] += 300
+        candles[61]["from"] += 300
+        candles[62]["from"] += 300
+        original = backtest.get_signal
+        backtest.get_signal = lambda rows, strategy: Signal(
+            "call", rows[-1]["from"], rows[-1]["close"], 1, 1, 50, "test"
+        )
+        try:
+            result = run_backtest(candles, payout=0.82, cooldown_bars=1)
+        finally:
+            backtest.get_signal = original
+        self.assertNotIn(candles[59]["from"], result.signal_times)
 
 
 if __name__ == "__main__":

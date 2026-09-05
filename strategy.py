@@ -3,6 +3,12 @@ import pandas as pd
 from signals import Signal
 
 
+STRATEGY_VERSIONS = {
+    "trend": "trend-v2",
+    "support_channel": "support-channel-v1",
+}
+
+
 def add_indicators(candles: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(candles).sort_values("from").reset_index(drop=True)
     close = df["close"].astype(float)

@@ -3,18 +3,26 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from iqoptionapi.stable_api import IQ_Option
 from assets import rejection_cooldown_seconds
 from config import Settings
-from risk import RiskManager, extract_pnl
-from strategy import get_signal
+from performance import analyze_pnls, format_report, read_trade_pnls
+from payout import PayoutCache
+from risk import extract_pnl, load_daily_risk
+from strategy import STRATEGY_VERSIONS, get_signal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
                     handlers=[logging.StreamHandler(), logging.FileHandler("bot.log", encoding="utf-8")])
 log = logging.getLogger("iq-demo-bot")
 
-TRADE_HEADERS = ["utc_time", "asset", "direction", "amount", "order_id", "pnl", "rsi14", "strategy"]
+TRADE_HEADERS = [
+    "utc_time", "asset", "direction", "amount", "order_id", "pnl", "rsi14",
+    "strategy", "strategy_version", "candle_time", "signal_close", "ema20", "ema50",
+    "reason", "balance_after", "payout_ratio", "quoted_payout",
+]
+TRADE_PATH = Path(__file__).with_name("trades.csv")
 
 
 def ensure_trade_schema(path: Path) -> None:
@@ -22,26 +30,41 @@ def ensure_trade_schema(path: Path) -> None:
         return
     with path.open("r", newline="", encoding="utf-8") as file:
         rows = list(csv.reader(file))
-    if not rows or "strategy" in rows[0]:
+    if not rows:
         return
-    migrated = [rows[0] + ["strategy"]]
-    migrated.extend(row + ["trend"] for row in rows[1:] if row)
+    header = rows[0]
+    missing = [column for column in TRADE_HEADERS if column not in header]
+    if not missing:
+        return
+    migrated = [header + missing]
+    for row in rows[1:]:
+        if not row:
+            continue
+        defaults = {"strategy": "trend", "strategy_version": "legacy"}
+        migrated.append(row + [defaults.get(column, "") for column in missing])
     temporary = path.with_name(path.name + ".tmp")
     with temporary.open("w", newline="", encoding="utf-8") as file:
         csv.writer(file).writerows(migrated)
     temporary.replace(path)
 
 
-def save_trade(asset, signal, amount, order_id, pnl):
-    path = Path("trades.csv")
+def save_trade(asset, signal, amount, order_id, pnl, balance_after=None, quoted_payout=None):
+    path = TRADE_PATH
     ensure_trade_schema(path)
     new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         if new:
             writer.writerow(TRADE_HEADERS)
-        writer.writerow([datetime.now(timezone.utc).isoformat(), asset, signal.direction,
-                         amount, order_id, pnl, round(signal.rsi14, 2), signal.strategy])
+        writer.writerow([
+            datetime.now(timezone.utc).isoformat(), asset, signal.direction, amount,
+            order_id, pnl, round(signal.rsi14, 2), signal.strategy,
+            STRATEGY_VERSIONS[signal.strategy],
+            signal.candle_time, signal.close, signal.ema20, signal.ema50, signal.reason,
+            "" if balance_after is None else balance_after,
+            pnl / amount if pnl > 0 else 0.0,
+            "" if quoted_payout is None else quoted_payout,
+        ])
 
 
 def connect(settings):
@@ -75,7 +98,46 @@ def main():
     if cfg.account == "REAL":
         log.warning("MODO REAL SELECCIONADO | las operaciones usan dinero real")
     client = connect_with_retry(cfg)
-    risk = RiskManager(cfg.max_trades_day, cfg.max_consecutive_losses, cfg.max_daily_loss)
+    payouts = PayoutCache(client)
+    balance = float(client.get_balance())
+    max_stake = balance * cfg.max_risk_per_trade_pct / 100
+    if cfg.enable_trading and cfg.amount > max_stake:
+        message = (
+            f"IQ_AMOUNT={cfg.amount:g} arriesga más de {cfg.max_risk_per_trade_pct:g}% "
+            f"del saldo ({max_stake:.2f})"
+        )
+        if cfg.account == "REAL":
+            raise ValueError(message)
+        log.warning("PRACTICE | %s; se respeta el monto elegido por el usuario", message)
+    percentage_daily_loss = balance * cfg.max_daily_loss_pct / 100
+    if cfg.account == "REAL":
+        effective_daily_loss = min(cfg.max_daily_loss, percentage_daily_loss)
+    else:
+        effective_daily_loss = cfg.max_daily_loss
+        if cfg.max_daily_loss > percentage_daily_loss:
+            log.warning(
+                "PRACTICE | MAX_DAILY_LOSS=%.2f supera %.1f%% del saldo (%.2f); "
+                "se respeta el límite absoluto elegido",
+                cfg.max_daily_loss, cfg.max_daily_loss_pct, percentage_daily_loss,
+            )
+    if cfg.account == "REAL" and cfg.enable_trading and cfg.require_validation_for_real:
+        version = STRATEGY_VERSIONS[cfg.strategy]
+        recent_pnls = read_trade_pnls(
+            TRADE_PATH, strategy=cfg.strategy, strategy_version=version
+        )[-cfg.validation_min_trades:]
+        report = analyze_pnls(
+            recent_pnls,
+            minimum_trades=cfg.validation_min_trades,
+            minimum_edge=cfg.validation_min_edge,
+        )
+        if not report.validated:
+            raise ValueError("Estrategia no habilitada para REAL:\n" + format_report(report))
+    risk_timezone = ZoneInfo(cfg.risk_timezone)
+    risk_day = datetime.now(risk_timezone).date()
+    risk = load_daily_risk(
+        TRADE_PATH, cfg.max_trades_day, cfg.max_consecutive_losses, effective_daily_loss,
+        day=risk_day, day_timezone=risk_timezone,
+    )
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
     disabled_until = {asset: 0.0 for asset in cfg.assets}
@@ -84,16 +146,25 @@ def main():
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
     while True:
-        allowed, reason = risk.can_trade(cfg.amount)
-        if not allowed:
-            log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
-            break
+        current_day = datetime.now(risk_timezone).date()
+        if current_day != risk_day:
+            risk_day = current_day
+            risk = load_daily_risk(
+                TRADE_PATH, cfg.max_trades_day, cfg.max_consecutive_losses,
+                effective_daily_loss, day=risk_day, day_timezone=risk_timezone,
+            )
+        if cfg.enable_trading:
+            allowed, reason = risk.can_trade(cfg.amount)
+            if not allowed:
+                log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
+                break
         try:
             for asset in cfg.assets:
-                allowed, reason = risk.can_trade(cfg.amount)
-                if not allowed:
-                    log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
-                    return
+                if cfg.enable_trading:
+                    allowed, reason = risk.can_trade(cfg.amount)
+                    if not allowed:
+                        log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
+                        return
                 if time.monotonic() < disabled_until[asset]:
                     continue
                 now = int(time.time())
@@ -120,6 +191,17 @@ def main():
                     log.info("%s | %s | SEÑAL %s | close=%.5f RSI=%.2f", asset,
                              signal.strategy, signal.direction.upper(), signal.close, signal.rsi14)
                     if cfg.enable_trading:
+                        try:
+                            quoted_payout = payouts.get(asset, cfg.expiration_min)
+                        except Exception as payout_error:
+                            log.warning("%s | No se pudo consultar payout; operación omitida: %s",
+                                        asset, payout_error)
+                            continue
+                        if quoted_payout is None or quoted_payout < cfg.min_payout:
+                            shown = "no disponible" if quoted_payout is None else f"{quoted_payout:.0%}"
+                            log.info("%s | Payout %s inferior al mínimo %.0f%%; señal omitida",
+                                     asset, shown, cfg.min_payout * 100)
+                            continue
                         ok, order_id = client.buy(cfg.amount, asset, signal.direction, cfg.expiration_min)
                         if not ok:
                             cooldown = rejection_cooldown_seconds(order_id)
@@ -135,7 +217,14 @@ def main():
                                 signal.candle_time
                                 + cfg.min_candles_between_trades * timeframe_seconds
                             )
-                            save_trade(asset, signal, cfg.amount, order_id, pnl)
+                            try:
+                                balance_after = float(client.get_balance())
+                            except Exception:
+                                balance_after = None
+                            save_trade(
+                                asset, signal, cfg.amount, order_id, pnl, balance_after,
+                                quoted_payout,
+                            )
                             log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
             time.sleep(10)
         except KeyboardInterrupt:
@@ -147,6 +236,7 @@ def main():
             if not client.check_connect():
                 try:
                     client = connect_with_retry(cfg)
+                    payouts = PayoutCache(client)
                 except ConnectionError as reconnect_error:
                     log.error("Reconexión agotada; se intentara nuevamente: %s", reconnect_error)
                     time.sleep(60)

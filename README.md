@@ -10,6 +10,9 @@ integración usa una API comunitaria no oficial.
 - La ejecución empieza desactivada (`ENABLE_TRADING=false`).
 - Operar en `REAL` exige cuatro controles simultáneos y valida el monto máximo.
 - Máximo de operaciones, pérdidas consecutivas y pérdida diaria.
+- Los límites diarios sobreviven a reinicios y se reinician por día UTC.
+- Riesgo por operación y pérdida diaria limitados también como porcentaje del saldo.
+- La cuenta REAL queda bloqueada hasta superar una puerta estadística.
 - Una sola operación por vela y por activo; sin martingala.
 - Varios pares configurables mediante una lista separada por comas.
 - Credenciales en `.env`, excluidas de Git.
@@ -84,15 +87,72 @@ a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
 - `IQ_STRATEGY=trend`: admite `trend` o `support_channel`.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
+- `MAX_RISK_PER_TRADE_PCT=1`: riesgo máximo de una operación como porcentaje del saldo.
+- `MAX_DAILY_LOSS_PCT=3`: segundo tope diario, relativo al saldo; se usa el más estricto.
+- `VALIDATION_MIN_TRADES=200`: muestra mínima de la versión actual antes de habilitar REAL.
+- `VALIDATION_MIN_EDGE=0.02`: margen exigido sobre el punto de equilibrio (2 puntos porcentuales).
+- `MIN_PAYOUT=0.85`: omite automáticamente cualquier entrada que pague menos de 85% neto.
+- `RISK_TIMEZONE=America/Bogota`: zona usada para reiniciar los límites de cada día.
 
 Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
 El bot recorre los pares en el orden configurado y mantiene una sola operación
 abierta a la vez para no exceder los límites de riesgo.
+Antes de cada orden consulta el payout vigente mediante una caché de un minuto. Si la
+consulta falla o el payout está por debajo de `MIN_PAYOUT`, no opera; el fallo es seguro.
+En `PRACTICE`, superar `MAX_RISK_PER_TRADE_PCT` genera una advertencia pero respeta el
+`IQ_AMOUNT` elegido; también prevalece el `MAX_DAILY_LOSS` absoluto configurado. En `REAL`,
+los porcentajes continúan siendo bloqueos obligatorios.
 
 Los pares normales suelen estar disponibles durante el horario del mercado Forex; los pares `-OTC` dependen de la oferta de IQ Option. No se presupone que uno esté abierto por el hecho de que el otro lo esté. Cada par se valida directamente al solicitar sus velas. Si está cerrado, no existe
 o no entrega datos, se omite durante cinco minutos sin detener los demás. El bot no
 usa `get_all_open_time()`, porque en `iqoptionapi 7.1.1` esa consulta también inicia
 el módulo digital y puede quedar esperando o lanzar errores internos.
+
+## Proceso de validación profesional
+
+No se considera rentable una estrategia por unas pocas victorias. El proceso es:
+
+1. Definir las reglas y congelar su versión; no retocarlas después de mirar cada pérdida.
+2. Probar con velas históricas en orden temporal, reservando el tramo final fuera de muestra.
+3. Exigir una muestra amplia y medir payout, punto de equilibrio, esperanza, profit factor,
+   drawdown y el límite inferior Wilson del acierto.
+4. Confirmar la misma versión en `PRACTICE`, con payouts y rechazos reales de la plataforma.
+5. Considerar `REAL` solo si fuera de muestra y `PRACTICE` permanecen validados.
+
+Evalúa las operaciones de práctica registradas:
+
+```powershell
+python performance.py trades.csv --strategy trend --version trend-v2
+```
+
+El estado solo aparece como `VALIDADA` si el PnL es positivo, se alcanza la muestra mínima
+y el límite inferior al 95% de la tasa de acierto supera el punto de equilibrio por el margen
+configurado. La puerta de REAL usa las últimas 200 operaciones de la versión actual, para que
+una ventaja antigua no oculte un deterioro reciente. Es más exigente que mirar únicamente el
+porcentaje ganador.
+
+Para el backtest, exporta velas cerradas con las columnas `from,open,close,min,max` e indica
+el payout neto observado (0.82 significa ganar 0,82 por cada 1 arriesgado):
+
+También puedes recolectar 5.000 velas directamente, sin enviar ninguna orden:
+
+```powershell
+python collect_history.py --assets EURUSD-OTC,NZDUSD-OTC --candles 5000
+```
+
+```powershell
+python backtest.py data\EURUSD-OTC_5m.csv --strategy trend --payout 0.82 --split 0.70
+```
+
+La decisión debe basarse en `OUT-OF-SAMPLE`. El simulador entra en la apertura siguiente
+a la señal, trata empates como pérdida y no usa velas futuras. Un CSV no reproduce latencia,
+cambios de payout, rechazos ni diferencias de cotización, por lo que después sigue siendo
+obligatoria la validación en `PRACTICE`.
+
+`research.py` compara familias de reglas predefinidas. `model_research.py` evalúa un
+modelo logístico regularizado. Ambos mantienen sellado el último 20% salvo que el candidato
+cumpla primero los criterios de entrenamiento y validación. Los resultados y decisiones
+quedan documentados en `VALIDATION.md`.
 
 ## Filtros de entrada
 
@@ -149,3 +209,12 @@ compartas el `.env`, no reutilices esa contraseña y no ejecutes robots desconoc
 Las opciones binarias pueden causar la pérdida total de cada operación. Que el bot
 funcione técnicamente no demuestra que la estrategia sea rentable; valida una
 muestra amplia en PRACTICE antes de considerar dinero real.
+
+La CFTC y la SEC advierten que la estructura de payout puede tener esperanza negativa
+incluso con resultados cercanos a 50/50 y documentan riesgos de fraude en plataformas
+no registradas:
+https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/fraudadv_binaryoptions.html
+
+La selección repetida de parámetros puede producir resultados históricos que desaparecen
+fuera de muestra; por eso el flujo separa desarrollo y evaluación:
+https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2308659

@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+from datetime import date, datetime, timezone, tzinfo
+import csv
+from pathlib import Path
 
 
 def extract_pnl(result) -> float:
@@ -39,3 +42,29 @@ class RiskManager:
         self.trades += 1
         self.pnl += pnl
         self.consecutive_losses = self.consecutive_losses + 1 if pnl < 0 else 0
+
+
+def load_daily_risk(
+    path: Path,
+    max_trades: int,
+    max_consecutive_losses: int,
+    max_daily_loss: float,
+    *,
+    day: date | None = None,
+    day_timezone: tzinfo = timezone.utc,
+) -> RiskManager:
+    """Rebuild today's limits so restarting the bot cannot reset the risk state."""
+    manager = RiskManager(max_trades, max_consecutive_losses, max_daily_loss)
+    if not path.exists():
+        return manager
+    target_day = day or datetime.now(day_timezone).date()
+    with path.open("r", newline="", encoding="utf-8") as file:
+        for row in csv.DictReader(file):
+            try:
+                timestamp = datetime.fromisoformat(row["utc_time"].replace("Z", "+00:00"))
+                pnl = float(row["pnl"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if timestamp.astimezone(day_timezone).date() == target_day:
+                manager.record(pnl)
+    return manager

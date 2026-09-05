@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
 from assets import parse_assets
 
@@ -57,6 +58,13 @@ class Settings:
     max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
     max_consecutive_losses: int = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "5"))
+    max_risk_per_trade_pct: float = float(os.getenv("MAX_RISK_PER_TRADE_PCT", "1"))
+    max_daily_loss_pct: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "3"))
+    require_validation_for_real: bool = _bool("REQUIRE_VALIDATION_FOR_REAL", True)
+    validation_min_trades: int = int(os.getenv("VALIDATION_MIN_TRADES", "200"))
+    validation_min_edge: float = float(os.getenv("VALIDATION_MIN_EDGE", "0.02"))
+    min_payout: float = float(os.getenv("MIN_PAYOUT", "0.85"))
+    risk_timezone: str = os.getenv("RISK_TIMEZONE", "UTC").strip()
 
     def validate(self) -> None:
         if not self.email or not self.password:
@@ -71,6 +79,20 @@ class Settings:
             raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
         if self.min_candles_between_trades < 1:
             raise ValueError("MIN_CANDLES_BETWEEN_TRADES debe ser al menos 1")
+        if not 0 < self.max_risk_per_trade_pct <= 2:
+            raise ValueError("MAX_RISK_PER_TRADE_PCT debe estar entre 0 y 2")
+        if not 0 < self.max_daily_loss_pct <= 10:
+            raise ValueError("MAX_DAILY_LOSS_PCT debe estar entre 0 y 10")
+        if self.validation_min_trades < 30:
+            raise ValueError("VALIDATION_MIN_TRADES debe ser al menos 30")
+        if not 0 <= self.validation_min_edge <= 0.20:
+            raise ValueError("VALIDATION_MIN_EDGE debe estar entre 0 y 0.20")
+        if not 0 < self.min_payout <= 1:
+            raise ValueError("MIN_PAYOUT debe estar entre 0 y 1")
+        try:
+            ZoneInfo(self.risk_timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"RISK_TIMEZONE no es válida: {self.risk_timezone}") from exc
         if self.strategy not in {"trend", "support_channel"}:
             raise ValueError("IQ_STRATEGY debe ser trend o support_channel")
         validate_account_mode(
