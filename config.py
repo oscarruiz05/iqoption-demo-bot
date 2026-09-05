@@ -60,6 +60,7 @@ class Settings:
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "5"))
     max_risk_per_trade_pct: float = float(os.getenv("MAX_RISK_PER_TRADE_PCT", "1"))
     max_daily_loss_pct: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "3"))
+    show_practice_risk_warnings: bool = _bool("SHOW_PRACTICE_RISK_WARNINGS", False)
     require_validation_for_real: bool = _bool("REQUIRE_VALIDATION_FOR_REAL", True)
     validation_min_trades: int = int(os.getenv("VALIDATION_MIN_TRADES", "200"))
     validation_min_edge: float = float(os.getenv("VALIDATION_MIN_EDGE", "0.02"))
