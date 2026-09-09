@@ -11,7 +11,7 @@ from config import Settings
 from performance import analyze_pnls, format_report, read_trade_pnls
 from payout import PayoutCache
 from risk import extract_pnl, load_daily_risk
-from strategy import STRATEGY_VERSIONS, get_signal
+from strategy import STRATEGY_VERSIONS, STRATEGY_WINDOWS, get_signal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
                     handlers=[logging.StreamHandler(), logging.FileHandler("bot.log", encoding="utf-8")])
@@ -145,6 +145,7 @@ def main():
     )
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
+    history_candles = STRATEGY_WINDOWS[cfg.strategy]
     disabled_until = {asset: 0.0 for asset in cfg.assets}
     next_trade_candle = {asset: 0 for asset in cfg.assets}
     asset_cursor = 0
@@ -180,7 +181,9 @@ def main():
                     continue
                 now = int(time.time())
                 try:
-                    candles = client.get_candles(asset, timeframe_seconds, 80, now)
+                    candles = client.get_candles(
+                        asset, timeframe_seconds, history_candles, now
+                    )
                     if cfg.asset_request_delay_seconds:
                         time.sleep(cfg.asset_request_delay_seconds)
                 except Exception as asset_error:
