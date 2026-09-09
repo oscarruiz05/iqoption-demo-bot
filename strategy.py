@@ -6,6 +6,7 @@ from signals import Signal
 STRATEGY_VERSIONS = {
     "trend": "trend-v2",
     "support_channel": "support-channel-v1",
+    "bollinger_reversal": "bollinger-reversal-v1",
 }
 
 
@@ -54,6 +55,9 @@ def get_signal(candles: list[dict], strategy_name: str = "trend") -> Optional[Si
     if strategy_name == "support_channel":
         from support_channel import detect_support_channel_signal
         return detect_support_channel_signal(df)
+    if strategy_name == "bollinger_reversal":
+        from bollinger_reversal import detect_bollinger_reversal_signal
+        return detect_bollinger_reversal_signal(df)
     return detect_signal(df)
 
 
