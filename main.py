@@ -20,7 +20,7 @@ log = logging.getLogger("iq-demo-bot")
 TRADE_HEADERS = [
     "utc_time", "asset", "direction", "amount", "order_id", "pnl", "rsi14",
     "strategy", "strategy_version", "candle_time", "signal_close", "ema20", "ema50",
-    "reason", "balance_after", "payout_ratio", "quoted_payout",
+    "reason", "balance_after", "payout_ratio", "quoted_payout", "expiration_min",
 ]
 TRADE_PATH = Path(__file__).with_name("trades.csv")
 
@@ -48,7 +48,10 @@ def ensure_trade_schema(path: Path) -> None:
     temporary.replace(path)
 
 
-def save_trade(asset, signal, amount, order_id, pnl, balance_after=None, quoted_payout=None):
+def save_trade(
+    asset, signal, amount, order_id, pnl, balance_after=None, quoted_payout=None,
+    expiration_min=None,
+):
     path = TRADE_PATH
     ensure_trade_schema(path)
     new = not path.exists()
@@ -64,6 +67,7 @@ def save_trade(asset, signal, amount, order_id, pnl, balance_after=None, quoted_
             "" if balance_after is None else balance_after,
             pnl / amount if pnl > 0 else 0.0,
             "" if quoted_payout is None else quoted_payout,
+            "" if expiration_min is None else expiration_min,
         ])
 
 
@@ -199,11 +203,15 @@ def main():
                     if signal.candle_time < next_trade_candle[asset]:
                         log.info("%s | Señal omitida por espera entre operaciones", asset)
                         continue
-                    log.info("%s | %s | SEÑAL %s | close=%.5f RSI=%.2f", asset,
-                             signal.strategy, signal.direction.upper(), signal.close, signal.rsi14)
+                    expiration_min = signal.expiration_min or cfg.expiration_min
+                    log.info(
+                        "%s | %s | SEÑAL %s | close=%.5f RSI=%.2f | expiración=%dm",
+                        asset, signal.strategy, signal.direction.upper(), signal.close,
+                        signal.rsi14, expiration_min,
+                    )
                     if cfg.enable_trading:
                         try:
-                            quoted_payout = payouts.get(asset, cfg.expiration_min)
+                            quoted_payout = payouts.get(asset, expiration_min)
                         except Exception as payout_error:
                             log.warning("%s | No se pudo consultar payout; operación omitida: %s",
                                         asset, payout_error)
@@ -213,7 +221,9 @@ def main():
                             log.info("%s | Payout %s inferior al mínimo %.0f%%; señal omitida",
                                      asset, shown, cfg.min_payout * 100)
                             continue
-                        ok, order_id = client.buy(cfg.amount, asset, signal.direction, cfg.expiration_min)
+                        ok, order_id = client.buy(
+                            cfg.amount, asset, signal.direction, expiration_min
+                        )
                         if not ok:
                             cooldown = rejection_cooldown_seconds(order_id)
                             disabled_until[asset] = time.monotonic() + cooldown
@@ -234,7 +244,7 @@ def main():
                                 balance_after = None
                             save_trade(
                                 asset, signal, cfg.amount, order_id, pnl, balance_after,
-                                quoted_payout,
+                                quoted_payout, expiration_min,
                             )
                             log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
             time.sleep(10)
