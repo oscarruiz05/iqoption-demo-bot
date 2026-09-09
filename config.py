@@ -80,8 +80,8 @@ class Settings:
             raise ValueError("Los montos deben ser mayores que cero")
         if self.timeframe_min not in {1, 5, 15}:
             raise ValueError("IQ_TIMEFRAME_MIN debe ser 1, 5 o 15")
-        if self.expiration_min not in {1, 5, 15}:
-            raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
+        if self.expiration_min not in {1, 3, 4, 5, 15}:
+            raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 3, 4, 5 o 15")
         if self.min_candles_between_trades < 1:
             raise ValueError("MIN_CANDLES_BETWEEN_TRADES debe ser al menos 1")
         if self.asset_batch_size < 1:
