@@ -11,3 +11,4 @@ class Signal:
     rsi14: float
     reason: str
     strategy: str = "trend"
+    expiration_min: int | None = None
