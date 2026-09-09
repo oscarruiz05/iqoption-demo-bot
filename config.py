@@ -88,10 +88,10 @@ class Settings:
             raise ValueError("ASSET_BATCH_SIZE debe ser al menos 1")
         if not 0 <= self.asset_request_delay_seconds <= 10:
             raise ValueError("ASSET_REQUEST_DELAY_SECONDS debe estar entre 0 y 10")
-        if not 0 < self.max_risk_per_trade_pct <= 2:
-            raise ValueError("MAX_RISK_PER_TRADE_PCT debe estar entre 0 y 2")
-        if not 0 < self.max_daily_loss_pct <= 10:
-            raise ValueError("MAX_DAILY_LOSS_PCT debe estar entre 0 y 10")
+        if not 0 < self.max_risk_per_trade_pct <= 100:
+            raise ValueError("MAX_RISK_PER_TRADE_PCT debe estar entre 0 y 100")
+        if not 0 < self.max_daily_loss_pct <= 100:
+            raise ValueError("MAX_DAILY_LOSS_PCT debe estar entre 0 y 100")
         if self.validation_min_trades < 30:
             raise ValueError("VALIDATION_MIN_TRADES debe ser al menos 30")
         if not 0 <= self.validation_min_edge <= 0.20:
