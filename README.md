@@ -181,7 +181,7 @@ Estrategia de reversión alineada con la tendencia para velas de un minuto:
   pendiente bajista para PUT.
 - Estocástico 13,3,3: cruce de giro dentro de sobreventa (≤20) o sobrecompra (≥80).
 - CCI 14: debe girar desde ≤−100 para CALL o desde ≥100 para PUT.
-- La vela debe perforar la banda exterior y cerrar nuevamente dentro de ella.
+- La vela debe cerrar fuera de la banda exterior: debajo de la inferior para CALL o encima de la superior para PUT.
 - Se descartan velas con rango superior a 2 ATR.
 - Vencimiento automático de 3 minutos con pendiente EMA fuerte y 4 con pendiente moderada.
 
@@ -196,7 +196,7 @@ MIN_CANDLES_BETWEEN_TRADES=5
 
 `IQ_EXPIRATION_MIN` funciona como respaldo; las señales de esta estrategia incluyen
 su vencimiento calculado de 3 o 4 minutos. La entrada se ejecuta en la apertura
-posterior a la vela cerrada que confirmó todas las condiciones.
+posterior a la vela que cerró fuera de la banda y confirmó todas las condiciones.
 
 ### Soportes y canales (`support_channel`)
 
