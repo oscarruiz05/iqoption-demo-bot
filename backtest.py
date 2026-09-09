@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from performance import PerformanceReport, analyze_pnls, format_report
-from strategy import get_signal
+from strategy import STRATEGY_WINDOWS, get_signal
 
 
 REQUIRED_COLUMNS = {"from", "open", "close", "min", "max"}
@@ -74,7 +74,8 @@ def run_backtest(
             continue
         # Producción solicita 80 velas; usar exactamente la misma ventana evita que
         # los indicadores se beneficien de una historia que el bot real no ve.
-        signal = get_signal(candles[max(0, index - 105):index], strategy)
+        window = STRATEGY_WINDOWS[strategy]
+        signal = get_signal(candles[max(0, index - window):index], strategy)
         if signal is None:
             continue
         signal_expiration_bars = expiration_bars
