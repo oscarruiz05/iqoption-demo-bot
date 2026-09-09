@@ -85,7 +85,7 @@ a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 - `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
-- `IQ_STRATEGY=trend`: admite `trend` o `support_channel`.
+- `IQ_STRATEGY=trend`: admite `trend`, `support_channel` o `bollinger_reversal`.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
 - `MAX_RISK_PER_TRADE_PCT=1`: riesgo máximo de una operación como porcentaje del saldo.
 - `MAX_DAILY_LOSS_PCT=3`: segundo tope diario, relativo al saldo; se usa el más estricto.
@@ -171,6 +171,32 @@ Después de completar una operación, el mismo par espera
 `MIN_CANDLES_BETWEEN_TRADES=5` antes de poder volver a entrar. Estos filtros
 reducen considerablemente la frecuencia; no garantizan rentabilidad y deben
 evaluarse con una muestra amplia en PRACTICE.
+
+### Bollinger + Estocástico + CCI (`bollinger_reversal`)
+
+Estrategia de reversión alineada con la tendencia para velas de un minuto:
+
+- Bandas de Bollinger: período 6 y desviación poblacional 2.
+- EMA 100: el precio debe estar arriba con pendiente alcista para CALL, o abajo con
+  pendiente bajista para PUT.
+- Estocástico 13,3,3: cruce de giro dentro de sobreventa (≤20) o sobrecompra (≥80).
+- CCI 14: debe girar desde ≤−100 para CALL o desde ≥100 para PUT.
+- La vela debe perforar la banda exterior y cerrar nuevamente dentro de ella.
+- Se descartan velas con rango superior a 2 ATR.
+- Vencimiento automático de 3 minutos con pendiente EMA fuerte y 4 con pendiente moderada.
+
+Configuración:
+
+```dotenv
+IQ_STRATEGY=bollinger_reversal
+IQ_TIMEFRAME_MIN=1
+IQ_EXPIRATION_MIN=3
+MIN_CANDLES_BETWEEN_TRADES=5
+```
+
+`IQ_EXPIRATION_MIN` funciona como respaldo; las señales de esta estrategia incluyen
+su vencimiento calculado de 3 o 4 minutos. La entrada se ejecuta en la apertura
+posterior a la vela cerrada que confirmó todas las condiciones.
 
 ### Soportes y canales (`support_channel`)
 

@@ -80,8 +80,8 @@ class Settings:
             raise ValueError("Los montos deben ser mayores que cero")
         if self.timeframe_min not in {1, 5, 15}:
             raise ValueError("IQ_TIMEFRAME_MIN debe ser 1, 5 o 15")
-        if self.expiration_min not in {1, 5, 15}:
-            raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 5 o 15")
+        if self.expiration_min not in {1, 3, 4, 5, 15}:
+            raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 3, 4, 5 o 15")
         if self.min_candles_between_trades < 1:
             raise ValueError("MIN_CANDLES_BETWEEN_TRADES debe ser al menos 1")
         if self.asset_batch_size < 1:
@@ -102,8 +102,12 @@ class Settings:
             ZoneInfo(self.risk_timezone)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"RISK_TIMEZONE no es válida: {self.risk_timezone}") from exc
-        if self.strategy not in {"trend", "support_channel"}:
-            raise ValueError("IQ_STRATEGY debe ser trend o support_channel")
+        if self.strategy not in {"trend", "support_channel", "bollinger_reversal"}:
+            raise ValueError(
+                "IQ_STRATEGY debe ser trend, support_channel o bollinger_reversal"
+            )
+        if self.strategy == "bollinger_reversal" and self.timeframe_min != 1:
+            raise ValueError("bollinger_reversal requiere IQ_TIMEFRAME_MIN=1")
         validate_account_mode(
             self.account,
             self.enable_trading,
