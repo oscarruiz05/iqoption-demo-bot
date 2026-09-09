@@ -294,11 +294,11 @@ def setup_bollinger_frame(direction: str, strong_slope: bool = False) -> pd.Data
     if bullish:
         rows[-6]["ema100"] = last["ema100"] - slope
         prev.update(stoch_k=10.0, stoch_d=15.0, cci14=-150.0)
-        last.update(min=0.985, stoch_k=18.0, stoch_d=16.0, cci14=-120.0)
+        last.update(close=0.985, min=0.980, stoch_k=18.0, stoch_d=16.0, cci14=-120.0)
     else:
         rows[-6]["ema100"] = last["ema100"] + slope
         prev.update(stoch_k=90.0, stoch_d=85.0, cci14=150.0)
-        last.update(max=1.015, stoch_k=82.0, stoch_d=84.0, cci14=120.0)
+        last.update(close=1.015, max=1.020, stoch_k=82.0, stoch_d=84.0, cci14=120.0)
     return pd.DataFrame(rows)
 
 
@@ -336,6 +336,16 @@ class BollingerReversalTests(unittest.TestCase):
     def test_rejects_call_without_stochastic_cross(self):
         frame = setup_bollinger_frame("call")
         frame.loc[frame.index[-1], "stoch_k"] = 14
+        self.assertIsNone(self._detect(frame))
+
+    def test_rejects_call_when_only_wick_pierces_lower_band(self):
+        frame = setup_bollinger_frame("call")
+        frame.loc[frame.index[-1], "close"] = 1.0
+        self.assertIsNone(self._detect(frame))
+
+    def test_rejects_put_when_only_wick_pierces_upper_band(self):
+        frame = setup_bollinger_frame("put")
+        frame.loc[frame.index[-1], "close"] = 1.0
         self.assertIsNone(self._detect(frame))
 
 
