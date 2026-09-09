@@ -37,7 +37,7 @@ def add_bollinger_reversal_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def detect_bollinger_reversal_signal(df: pd.DataFrame) -> Optional[Signal]:
-    """Trend-aligned Bollinger rejection with Stochastic and CCI confirmation."""
+    """Trend-aligned Bollinger breakout close with Stochastic and CCI confirmation."""
     if len(df) < 105:
         return None
 
@@ -58,8 +58,8 @@ def detect_bollinger_reversal_signal(df: pd.DataFrame) -> Optional[Signal]:
     normalized_slope = abs(ema_slope) / atr
     candle_range = float(last["max"] - last["min"])
     normal_volatility = candle_range <= 2.0 * atr
-    closes_inside_lower = last["close"] > last["bb_lower6"]
-    closes_inside_upper = last["close"] < last["bb_upper6"]
+    closes_below_lower = last["close"] < last["bb_lower6"]
+    closes_above_upper = last["close"] > last["bb_upper6"]
 
     bullish_trend = (
         last["close"] > last["ema100"]
@@ -89,15 +89,13 @@ def detect_bollinger_reversal_signal(df: pd.DataFrame) -> Optional[Signal]:
     call_setup = (
         normal_volatility
         and bullish_trend
-        and last["min"] < last["bb_lower6"]
-        and closes_inside_lower
+        and closes_below_lower
         and oversold_turn
     )
     put_setup = (
         normal_volatility
         and bearish_trend
-        and last["max"] > last["bb_upper6"]
-        and closes_inside_upper
+        and closes_above_upper
         and overbought_turn
     )
     if not call_setup and not put_setup:
@@ -106,7 +104,7 @@ def detect_bollinger_reversal_signal(df: pd.DataFrame) -> Optional[Signal]:
     direction = "call" if call_setup else "put"
     expiration_min = 3 if normalized_slope >= 0.15 else 4
     reason = (
-        f"BB(6,2) rechazo + EMA100 tendencia + Stoch(13,3,3) "
+        f"BB(6,2) cierre exterior + EMA100 tendencia + Stoch(13,3,3) "
         f"+ CCI14 | expiracion={expiration_min}m"
     )
     return Signal(
