@@ -9,6 +9,9 @@ from assets import (
     is_connection_error, next_asset_batch, parse_assets, rejection_cooldown_seconds,
 )
 from backtest import run_backtest
+from bollinger_reversal import (
+    add_bollinger_reversal_indicators, detect_bollinger_reversal_signal,
+)
 from config import REAL_CONFIRMATION_PHRASE, validate_account_mode
 from performance import analyze_pnls, wilson_interval
 from payout import PayoutCache, option_kind
@@ -262,6 +265,78 @@ class StrategyTests(unittest.TestCase):
         previous = frame.index[-2]
         frame.loc[previous, "open"] = frame.loc[previous, "close"] - 0.0002
         self.assertIsNone(detect_signal(frame))
+
+
+def setup_bollinger_frame(direction: str, strong_slope: bool = False) -> pd.DataFrame:
+    bullish = direction == "call"
+    rows = []
+    for index in range(105):
+        ema100 = 0.95 if bullish else 1.05
+        rows.append({
+            "from": index * 60,
+            "open": 1.0,
+            "close": 1.0,
+            "min": 0.99,
+            "max": 1.01,
+            "ema20": 1.0,
+            "ema50": 1.0,
+            "rsi14": 50.0,
+            "atr14": 0.02,
+            "bb_lower6": 0.99,
+            "bb_upper6": 1.01,
+            "ema100": ema100,
+            "stoch_k": 50.0,
+            "stoch_d": 50.0,
+            "cci14": 0.0,
+        })
+    prev, last = rows[-2], rows[-1]
+    slope = 0.004 if strong_slope else 0.002
+    if bullish:
+        rows[-6]["ema100"] = last["ema100"] - slope
+        prev.update(stoch_k=10.0, stoch_d=15.0, cci14=-150.0)
+        last.update(min=0.985, stoch_k=18.0, stoch_d=16.0, cci14=-120.0)
+    else:
+        rows[-6]["ema100"] = last["ema100"] + slope
+        prev.update(stoch_k=90.0, stoch_d=85.0, cci14=150.0)
+        last.update(max=1.015, stoch_k=82.0, stoch_d=84.0, cci14=120.0)
+    return pd.DataFrame(rows)
+
+
+class BollingerReversalTests(unittest.TestCase):
+    def _detect(self, frame):
+        import bollinger_reversal
+
+        original = bollinger_reversal.add_bollinger_reversal_indicators
+        bollinger_reversal.add_bollinger_reversal_indicators = lambda _: frame
+        try:
+            return detect_bollinger_reversal_signal(frame)
+        finally:
+            bollinger_reversal.add_bollinger_reversal_indicators = original
+
+    def test_indicator_uses_six_period_bollinger_population_deviation(self):
+        frame = pd.DataFrame({
+            "close": [1, 2, 3, 4, 5, 6],
+            "min": [0, 1, 2, 3, 4, 5],
+            "max": [2, 3, 4, 5, 6, 7],
+        })
+        result = add_bollinger_reversal_indicators(frame)
+        expected = 3.5 + 2 * np.std([1, 2, 3, 4, 5, 6], ddof=0)
+        self.assertAlmostEqual(result.iloc[-1]["bb_upper6"], expected)
+
+    def test_accepts_call_and_uses_four_minutes_for_moderate_trend(self):
+        signal = self._detect(setup_bollinger_frame("call"))
+        self.assertEqual(signal.direction, "call")
+        self.assertEqual(signal.expiration_min, 4)
+
+    def test_accepts_put_and_uses_three_minutes_for_strong_trend(self):
+        signal = self._detect(setup_bollinger_frame("put", strong_slope=True))
+        self.assertEqual(signal.direction, "put")
+        self.assertEqual(signal.expiration_min, 3)
+
+    def test_rejects_call_without_stochastic_cross(self):
+        frame = setup_bollinger_frame("call")
+        frame.loc[frame.index[-1], "stoch_k"] = 14
+        self.assertIsNone(self._detect(frame))
 
 
 class SupportChannelTests(unittest.TestCase):
