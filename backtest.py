@@ -69,22 +69,27 @@ def run_backtest(
     signal_times: list[int] = []
     next_allowed_index = 60
     # En i solo existen las velas [0, i); la entrada ocurre en la apertura de i.
-    for index in range(60, len(candles) - expiration_bars + 1):
+    for index in range(60, len(candles)):
         if index < next_allowed_index:
             continue
-        if timeframe_seconds is None or any(
-            int(candles[position]["from"]) - int(candles[position - 1]["from"])
-            != timeframe_seconds
-            for position in range(index, index + expiration_bars)
-        ):
-            continue
         # Producción solicita 80 velas; usar exactamente la misma ventana evita que
-        # las EMA del backtest se beneficien de una historia que el bot real no ve.
-        signal = get_signal(candles[max(0, index - 80):index], strategy)
+        # los indicadores se beneficien de una historia que el bot real no ve.
+        signal = get_signal(candles[max(0, index - 105):index], strategy)
         if signal is None:
             continue
+        signal_expiration_bars = expiration_bars
+        if signal.expiration_min is not None:
+            if timeframe_seconds != 60:
+                continue
+            signal_expiration_bars = signal.expiration_min
+        if index + signal_expiration_bars > len(candles) or any(
+            int(candles[position]["from"]) - int(candles[position - 1]["from"])
+            != timeframe_seconds
+            for position in range(index, index + signal_expiration_bars)
+        ):
+            continue
         entry = candles[index]["open"]
-        exit_price = candles[index + expiration_bars - 1]["close"]
+        exit_price = candles[index + signal_expiration_bars - 1]["close"]
         won = exit_price > entry if signal.direction == "call" else exit_price < entry
         # Un empate se trata como pérdida: evita favorecer artificialmente el resultado.
         pnl = stake * payout if won else -stake
@@ -101,7 +106,7 @@ def run_backtest(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest sin look-ahead sobre velas OHLC.")
     parser.add_argument("candles_csv")
-    parser.add_argument("--strategy", choices=("trend", "support_channel"), default="trend")
+    parser.add_argument("--strategy", choices=("trend", "support_channel", "bollinger_reversal"), default="trend")
     parser.add_argument("--payout", type=float, required=True,
                         help="Ganancia neta por unidad arriesgada; por ejemplo 0.82")
     parser.add_argument("--stake", type=float, default=1.0)
