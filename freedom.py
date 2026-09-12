@@ -68,12 +68,12 @@ def detect_freedom_signal(df: pd.DataFrame) -> Optional[Signal]:
     upper_break_atr = float(last["close"] - last["bb_upper14"]) / atr
     call_setup = (
         bullish_trend
-        and lower_break_atr >= 0.25
+        and lower_break_atr >= 0.25 - 1e-12
         and last["rsi10"] <= 30
     )
     put_setup = (
         bearish_trend
-        and upper_break_atr >= 0.25
+        and upper_break_atr >= 0.25 - 1e-12
         and last["rsi10"] >= 70
     )
     if not call_setup and not put_setup:
