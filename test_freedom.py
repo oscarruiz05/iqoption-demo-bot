@@ -63,6 +63,7 @@ class FreedomTests(unittest.TestCase):
         self.assertAlmostEqual(signal.metrics["ema200"], 0.95)
         self.assertEqual(signal.metrics["trend_side_count"], 5.0)
         self.assertLess(signal.metrics["bb_lower"], signal.close + 0.01)
+        self.assertGreaterEqual(signal.metrics["band_break_atr"], 0.25)
 
     def test_accepts_put_with_all_four_filters(self):
         signal = self._detect(freedom_frame("put"))
@@ -77,6 +78,16 @@ class FreedomTests(unittest.TestCase):
     def test_rejects_signal_without_confirmed_trend(self):
         frame = freedom_frame("call")
         frame.loc[frame.index[-6], "ema200"] = 0.96
+        self.assertIsNone(self._detect(frame))
+
+    def test_rejects_weak_ema_slope(self):
+        frame = freedom_frame("call")
+        frame.loc[frame.index[-6], "ema200"] = 0.948
+        self.assertIsNone(self._detect(frame))
+
+    def test_rejects_shallow_bollinger_close(self):
+        frame = freedom_frame("call")
+        frame.loc[frame.index[-1], "close"] = 0.987
         self.assertIsNone(self._detect(frame))
 
 
