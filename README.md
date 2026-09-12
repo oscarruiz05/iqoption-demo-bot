@@ -221,6 +221,11 @@ IQ_EXPIRATION_MIN=5
 
 La señal usa únicamente velas cerradas y se ejecuta en la apertura de la vela siguiente.
 
+En temporalidad M1 el bot inicia un ciclo por todos los pares al detectar un nuevo
+minuto, sin la espera de diez segundos entre lotes. El log y `trades.csv` registran
+EMA200, pendiente, pendiente normalizada por ATR, Bollinger superior/inferior,
+RSI10, cantidad de cierres del lado correcto y retraso desde el cierre de la vela.
+
 ### Soportes y canales (`support_channel`)
 
 Esta estrategia busca rebotes, no rupturas. Requiere:
