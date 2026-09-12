@@ -22,9 +22,10 @@ TRADE_HEADERS = [
     "strategy", "strategy_version", "candle_time", "signal_close", "ema20", "ema50",
     "reason", "balance_after", "payout_ratio", "quoted_payout", "expiration_min",
     "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower", "rsi10",
-    "trend_side_count", "signal_delay_seconds",
+    "trend_side_count", "band_break_atr", "signal_delay_seconds",
 ]
 TRADE_PATH = Path(__file__).with_name("trades.csv")
+FREEDOM_MAX_SIGNAL_DELAY_SECONDS = 8.0
 
 
 def ensure_trade_schema(path: Path) -> None:
@@ -72,7 +73,7 @@ def save_trade(
             "" if expiration_min is None else expiration_min,
             *((signal.metrics or {}).get(column, "") for column in (
                 "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower",
-                "rsi10", "trend_side_count",
+                "rsi10", "trend_side_count", "band_break_atr",
             )),
             "" if signal_delay_seconds is None else round(signal_delay_seconds, 3),
         ])
@@ -90,6 +91,7 @@ def format_signal_metrics(signal) -> str:
         f" BBinf={metrics.get('bb_lower', float('nan')):.5f}"
         f" RSI10={metrics.get('rsi10', float('nan')):.2f}"
         f" ladoEMA={metrics.get('trend_side_count', float('nan')):.0f}/5"
+        f" rupturaATR={metrics.get('band_break_atr', float('nan')):.3f}"
     )
 
 
@@ -244,6 +246,17 @@ def main():
                     signal_delay_seconds = max(
                         0.0, time.time() - (signal.candle_time + timeframe_seconds)
                     )
+                    if (
+                        signal.strategy == "freedom"
+                        and signal_delay_seconds > FREEDOM_MAX_SIGNAL_DELAY_SECONDS
+                    ):
+                        log.info(
+                            "%s | freedom | Señal omitida por retraso %.2fs > %.2fs%s",
+                            asset, signal_delay_seconds,
+                            FREEDOM_MAX_SIGNAL_DELAY_SECONDS,
+                            format_signal_metrics(signal),
+                        )
+                        continue
                     log.info(
                         "%s | %s | SEÑAL %s | close=%.5f RSI=%.2f | "
                         "expiración=%dm | retraso=%.2fs%s",
