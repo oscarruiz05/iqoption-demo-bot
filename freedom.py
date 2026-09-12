@@ -51,15 +51,17 @@ def detect_freedom_signal(df: pd.DataFrame) -> Optional[Signal]:
         return None
 
     ema_slope = float(last["ema200"] - ema_reference["ema200"])
+    closes_above_ema = int((recent["close"] > recent["ema200"]).sum())
+    closes_below_ema = int((recent["close"] < recent["ema200"]).sum())
     bullish_trend = (
         last["close"] > last["ema200"]
         and ema_slope >= 0.03 * atr
-        and int((recent["close"] > recent["ema200"]).sum()) >= 4
+        and closes_above_ema >= 4
     )
     bearish_trend = (
         last["close"] < last["ema200"]
         and ema_slope <= -0.03 * atr
-        and int((recent["close"] < recent["ema200"]).sum()) >= 4
+        and closes_below_ema >= 4
     )
 
     call_setup = (
@@ -90,4 +92,15 @@ def detect_freedom_signal(df: pd.DataFrame) -> Optional[Signal]:
         reason,
         "freedom",
         5,
+        {
+            "ema200": float(last["ema200"]),
+            "ema200_slope": ema_slope,
+            "ema_slope_atr": ema_slope / atr,
+            "bb_upper": float(last["bb_upper14"]),
+            "bb_lower": float(last["bb_lower14"]),
+            "rsi10": float(last["rsi10"]),
+            "trend_side_count": float(
+                closes_above_ema if direction == "call" else closes_below_ema
+            ),
+        },
     )
