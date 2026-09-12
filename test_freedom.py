@@ -60,6 +60,9 @@ class FreedomTests(unittest.TestCase):
         self.assertEqual(signal.direction, "call")
         self.assertEqual(signal.expiration_min, 5)
         self.assertEqual(signal.strategy, "freedom")
+        self.assertAlmostEqual(signal.metrics["ema200"], 0.95)
+        self.assertEqual(signal.metrics["trend_side_count"], 5.0)
+        self.assertLess(signal.metrics["bb_lower"], signal.close + 0.01)
 
     def test_accepts_put_with_all_four_filters(self):
         signal = self._detect(freedom_frame("put"))

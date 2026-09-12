@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -12,3 +13,4 @@ class Signal:
     reason: str
     strategy: str = "trend"
     expiration_min: int | None = None
+    metrics: Optional[dict[str, float]] = None
