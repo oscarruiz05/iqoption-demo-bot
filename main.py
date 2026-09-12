@@ -21,6 +21,8 @@ TRADE_HEADERS = [
     "utc_time", "asset", "direction", "amount", "order_id", "pnl", "rsi14",
     "strategy", "strategy_version", "candle_time", "signal_close", "ema20", "ema50",
     "reason", "balance_after", "payout_ratio", "quoted_payout", "expiration_min",
+    "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower", "rsi10",
+    "trend_side_count", "signal_delay_seconds",
 ]
 TRADE_PATH = Path(__file__).with_name("trades.csv")
 
@@ -50,7 +52,7 @@ def ensure_trade_schema(path: Path) -> None:
 
 def save_trade(
     asset, signal, amount, order_id, pnl, balance_after=None, quoted_payout=None,
-    expiration_min=None,
+    expiration_min=None, signal_delay_seconds=None,
 ):
     path = TRADE_PATH
     ensure_trade_schema(path)
@@ -68,7 +70,27 @@ def save_trade(
             pnl / amount if pnl > 0 else 0.0,
             "" if quoted_payout is None else quoted_payout,
             "" if expiration_min is None else expiration_min,
+            *((signal.metrics or {}).get(column, "") for column in (
+                "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower",
+                "rsi10", "trend_side_count",
+            )),
+            "" if signal_delay_seconds is None else round(signal_delay_seconds, 3),
         ])
+
+
+def format_signal_metrics(signal) -> str:
+    metrics = signal.metrics or {}
+    if not metrics:
+        return ""
+    return (
+        f" | EMA200={metrics.get('ema200', float('nan')):.5f}"
+        f" pendiente={metrics.get('ema200_slope', float('nan')):.5f}"
+        f" pendienteATR={metrics.get('ema_slope_atr', float('nan')):.3f}"
+        f" BBsup={metrics.get('bb_upper', float('nan')):.5f}"
+        f" BBinf={metrics.get('bb_lower', float('nan')):.5f}"
+        f" RSI10={metrics.get('rsi10', float('nan')):.2f}"
+        f" ladoEMA={metrics.get('trend_side_count', float('nan')):.0f}/5"
+    )
 
 
 def connect(settings):
@@ -149,6 +171,7 @@ def main():
     disabled_until = {asset: 0.0 for asset in cfg.assets}
     next_trade_candle = {asset: 0 for asset in cfg.assets}
     asset_cursor = 0
+    last_minute_scan = None
     log.info("Cuenta=%s | configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
@@ -168,9 +191,20 @@ def main():
         try:
             if not client.check_connect():
                 raise ConnectionError("WebSocket desconectado antes de consultar velas")
-            asset_batch, asset_cursor = next_asset_batch(
-                cfg.assets, asset_cursor, cfg.asset_batch_size
-            )
+            if timeframe_seconds == 60:
+                minute_bucket = int(time.time()) // timeframe_seconds
+                if minute_bucket == last_minute_scan:
+                    next_boundary = (minute_bucket + 1) * timeframe_seconds
+                    time.sleep(max(0.05, next_boundary + 0.25 - time.time()))
+                    continue
+                last_minute_scan = minute_bucket
+                # En M1 se analizan todos los pares en el mismo ciclo para evitar
+                # esperar 10 segundos entre lotes y entrar tarde en la vela siguiente.
+                asset_batch = cfg.assets
+            else:
+                asset_batch, asset_cursor = next_asset_batch(
+                    cfg.assets, asset_cursor, cfg.asset_batch_size
+                )
             for asset in asset_batch:
                 if cfg.enable_trading:
                     allowed, reason = risk.can_trade(cfg.amount)
@@ -207,10 +241,15 @@ def main():
                         log.info("%s | Señal omitida por espera entre operaciones", asset)
                         continue
                     expiration_min = signal.expiration_min or cfg.expiration_min
+                    signal_delay_seconds = max(
+                        0.0, time.time() - (signal.candle_time + timeframe_seconds)
+                    )
                     log.info(
-                        "%s | %s | SEÑAL %s | close=%.5f RSI=%.2f | expiración=%dm",
+                        "%s | %s | SEÑAL %s | close=%.5f RSI=%.2f | "
+                        "expiración=%dm | retraso=%.2fs%s",
                         asset, signal.strategy, signal.direction.upper(), signal.close,
-                        signal.rsi14, expiration_min,
+                        signal.rsi14, expiration_min, signal_delay_seconds,
+                        format_signal_metrics(signal),
                     )
                     if cfg.enable_trading:
                         try:
@@ -247,10 +286,11 @@ def main():
                                 balance_after = None
                             save_trade(
                                 asset, signal, cfg.amount, order_id, pnl, balance_after,
-                                quoted_payout, expiration_min,
+                                quoted_payout, expiration_min, signal_delay_seconds,
                             )
                             log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
-            time.sleep(10)
+            if timeframe_seconds != 60:
+                time.sleep(10)
         except KeyboardInterrupt:
             log.info("Detenido por el usuario")
             break
