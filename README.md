@@ -205,10 +205,11 @@ Estrategia de cuatro filtros para velas de un minuto:
 - EMA 200 debajo del precio y con pendiente alcista para CALL; encima del precio y
   con pendiente bajista para PUT.
 - Tendencia confirmada cuando al menos 4 de las últimas 5 velas permanecen del lado
-  correcto de la EMA 200 y su pendiente supera 0,03 ATR.
-- La vela debe cerrar por debajo de Bollinger 14/2 para CALL o por encima para PUT.
-  Una perforación hecha solo por la mecha no cuenta.
+  correcto de la EMA 200 y su pendiente alcanza al menos 0,15 ATR.
+- La vela debe cerrar por debajo de Bollinger 14/2 para CALL o por encima para PUT,
+  con una ruptura mínima de 0,25 ATR. Una perforación hecha solo por la mecha no cuenta.
 - RSI 10 en sobreventa (≤30) para CALL o sobrecompra (≥70) para PUT.
+- Las señales detectadas más de 8 segundos después del cierre se descartan.
 - Expiración fija de 5 minutos.
 
 Configuración:
@@ -224,7 +225,7 @@ La señal usa únicamente velas cerradas y se ejecuta en la apertura de la vela 
 En temporalidad M1 el bot inicia un ciclo por todos los pares al detectar un nuevo
 minuto, sin la espera de diez segundos entre lotes. El log y `trades.csv` registran
 EMA200, pendiente, pendiente normalizada por ATR, Bollinger superior/inferior,
-RSI10, cantidad de cierres del lado correcto y retraso desde el cierre de la vela.
+RSI10, magnitud de ruptura en ATR, cantidad de cierres del lado correcto y retraso desde el cierre de la vela.
 
 ### Soportes y canales (`support_channel`)
 

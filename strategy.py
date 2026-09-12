@@ -14,7 +14,7 @@ STRATEGY_VERSIONS = {
     "trend": "trend-v2",
     "support_channel": "support-channel-v1",
     "bollinger_reversal": "bollinger-reversal-v1",
-    "freedom": "freedom-v1",
+    "freedom": "freedom-v2",
 }
 
 

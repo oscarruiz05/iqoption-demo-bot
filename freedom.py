@@ -55,23 +55,25 @@ def detect_freedom_signal(df: pd.DataFrame) -> Optional[Signal]:
     closes_below_ema = int((recent["close"] < recent["ema200"]).sum())
     bullish_trend = (
         last["close"] > last["ema200"]
-        and ema_slope >= 0.03 * atr
+        and ema_slope >= 0.15 * atr
         and closes_above_ema >= 4
     )
     bearish_trend = (
         last["close"] < last["ema200"]
-        and ema_slope <= -0.03 * atr
+        and ema_slope <= -0.15 * atr
         and closes_below_ema >= 4
     )
 
+    lower_break_atr = float(last["bb_lower14"] - last["close"]) / atr
+    upper_break_atr = float(last["close"] - last["bb_upper14"]) / atr
     call_setup = (
         bullish_trend
-        and last["close"] < last["bb_lower14"]
+        and lower_break_atr >= 0.25 - 1e-12
         and last["rsi10"] <= 30
     )
     put_setup = (
         bearish_trend
-        and last["close"] > last["bb_upper14"]
+        and upper_break_atr >= 0.25 - 1e-12
         and last["rsi10"] >= 70
     )
     if not call_setup and not put_setup:
@@ -99,6 +101,7 @@ def detect_freedom_signal(df: pd.DataFrame) -> Optional[Signal]:
             "bb_upper": float(last["bb_upper14"]),
             "bb_lower": float(last["bb_lower14"]),
             "rsi10": float(last["rsi10"]),
+            "band_break_atr": lower_break_atr if direction == "call" else upper_break_atr,
             "trend_side_count": float(
                 closes_above_ema if direction == "call" else closes_below_ema
             ),
