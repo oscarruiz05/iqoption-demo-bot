@@ -102,12 +102,12 @@ class Settings:
             ZoneInfo(self.risk_timezone)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"RISK_TIMEZONE no es válida: {self.risk_timezone}") from exc
-        if self.strategy not in {"trend", "support_channel", "bollinger_reversal"}:
+        if self.strategy not in {"trend", "support_channel", "bollinger_reversal", "freedom"}:
             raise ValueError(
-                "IQ_STRATEGY debe ser trend, support_channel o bollinger_reversal"
+                "IQ_STRATEGY debe ser trend, support_channel, bollinger_reversal o freedom"
             )
-        if self.strategy == "bollinger_reversal" and self.timeframe_min != 1:
-            raise ValueError("bollinger_reversal requiere IQ_TIMEFRAME_MIN=1")
+        if self.strategy in {"bollinger_reversal", "freedom"} and self.timeframe_min != 1:
+            raise ValueError(f"{self.strategy} requiere IQ_TIMEFRAME_MIN=1")
         validate_account_mode(
             self.account,
             self.enable_trading,

@@ -107,7 +107,7 @@ def run_backtest(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest sin look-ahead sobre velas OHLC.")
     parser.add_argument("candles_csv")
-    parser.add_argument("--strategy", choices=("trend", "support_channel", "bollinger_reversal"), default="trend")
+    parser.add_argument("--strategy", choices=("trend", "support_channel", "bollinger_reversal", "freedom"), default="trend")
     parser.add_argument("--payout", type=float, required=True,
                         help="Ganancia neta por unidad arriesgada; por ejemplo 0.82")
     parser.add_argument("--stake", type=float, default=1.0)
@@ -130,7 +130,7 @@ def main() -> None:
         timeframe_seconds=None,
     )
     # Se conserva calentamiento previo, pero las señales reportadas empiezan en el corte.
-    warmup_start = max(0, split_at - 80)
+    warmup_start = max(0, split_at - STRATEGY_WINDOWS[args.strategy])
     test = run_backtest(
         candles[warmup_start:], strategy=args.strategy, payout=args.payout, stake=args.stake,
         expiration_bars=args.expiration_bars, cooldown_bars=args.cooldown_bars,

@@ -85,7 +85,7 @@ a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 - `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
-- `IQ_STRATEGY=trend`: admite `trend`, `support_channel` o `bollinger_reversal`.
+- `IQ_STRATEGY=trend`: admite `trend`, `support_channel`, `bollinger_reversal` o `freedom`.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
 - `MAX_RISK_PER_TRADE_PCT=1`: riesgo máximo de una operación como porcentaje del saldo; admite valores mayores que 0 y hasta 100.
 - `MAX_DAILY_LOSS_PCT=3`: segundo tope diario relativo al saldo; admite valores mayores que 0 y hasta 100, y se usa el más estricto.
@@ -197,6 +197,29 @@ MIN_CANDLES_BETWEEN_TRADES=5
 `IQ_EXPIRATION_MIN` funciona como respaldo; las señales de esta estrategia incluyen
 su vencimiento calculado de 3 o 4 minutos. La entrada se ejecuta en la apertura
 posterior a la vela que cerró fuera de la banda y confirmó todas las condiciones.
+
+### Freedom (`freedom`)
+
+Estrategia de cuatro filtros para velas de un minuto:
+
+- EMA 200 debajo del precio y con pendiente alcista para CALL; encima del precio y
+  con pendiente bajista para PUT.
+- Tendencia confirmada cuando al menos 4 de las últimas 5 velas permanecen del lado
+  correcto de la EMA 200 y su pendiente supera 0,03 ATR.
+- La vela debe cerrar por debajo de Bollinger 14/2 para CALL o por encima para PUT.
+  Una perforación hecha solo por la mecha no cuenta.
+- RSI 10 en sobreventa (≤30) para CALL o sobrecompra (≥70) para PUT.
+- Expiración fija de 5 minutos.
+
+Configuración:
+
+```dotenv
+IQ_STRATEGY=freedom
+IQ_TIMEFRAME_MIN=1
+IQ_EXPIRATION_MIN=5
+```
+
+La señal usa únicamente velas cerradas y se ejecuta en la apertura de la vela siguiente.
 
 ### Soportes y canales (`support_channel`)
 
