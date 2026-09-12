@@ -7,12 +7,14 @@ STRATEGY_WINDOWS = {
     "trend": 80,
     "support_channel": 80,
     "bollinger_reversal": 120,
+    "freedom": 240,
 }
 
 STRATEGY_VERSIONS = {
     "trend": "trend-v2",
     "support_channel": "support-channel-v1",
     "bollinger_reversal": "bollinger-reversal-v1",
+    "freedom": "freedom-v1",
 }
 
 
@@ -55,7 +57,7 @@ def add_indicators(candles: list[dict]) -> pd.DataFrame:
 
 def get_signal(candles: list[dict], strategy_name: str = "trend") -> Optional[Signal]:
     """Uses only closed candles. The caller must omit the currently forming candle."""
-    minimum = 105 if strategy_name == "bollinger_reversal" else 60
+    minimum = {"bollinger_reversal": 105, "freedom": 205}.get(strategy_name, 60)
     if len(candles) < minimum:
         return None
     df = add_indicators(candles)
@@ -65,6 +67,9 @@ def get_signal(candles: list[dict], strategy_name: str = "trend") -> Optional[Si
     if strategy_name == "bollinger_reversal":
         from bollinger_reversal import detect_bollinger_reversal_signal
         return detect_bollinger_reversal_signal(df)
+    if strategy_name == "freedom":
+        from freedom import detect_freedom_signal
+        return detect_freedom_signal(df)
     return detect_signal(df)
 
 
