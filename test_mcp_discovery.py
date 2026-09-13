@@ -1,7 +1,9 @@
+import asyncio
 import unittest
 
 from mcp_discovery import (
     MCPConfigurationError,
+    call_read_only_tool,
     classify_tool,
     validate_server_url,
 )
@@ -48,6 +50,14 @@ class MCPDiscoveryTests(unittest.TestCase):
         self.assertTrue(classify_tool("place_trade"))
         self.assertTrue(classify_tool("rollover_position"))
         self.assertTrue(classify_tool("sell_position"))
+
+    def test_read_only_client_refuses_place_trade(self):
+        with self.assertRaises(MCPConfigurationError):
+            asyncio.run(
+                call_read_only_tool(
+                    "binary-options", "fake-token", "place_trade", {}
+                )
+            )
 
 
 if __name__ == "__main__":
