@@ -100,6 +100,15 @@ python discover_mcp.py --server turbo-options
 python discover_mcp.py --server binary-options
 ```
 
+Después del descubrimiento, consulta únicamente capacidades y límites:
+
+```powershell
+python probe_mcp.py --server all
+```
+
+El sondeo solo puede llamar `get_capabilities` y `get_limits`. La lista blanca
+rechaza `place_trade`, `sell_position` y `rollover_position` antes de conectarse.
+
 El comando realiza la negociación MCP y `tools/list`, pero no llama ninguna
 herramienta ni envía operaciones. La salida muestra nombres, descripciones y esquemas,
 y marca herramientas potencialmente capaces de modificar posiciones.
