@@ -49,6 +49,21 @@ class MCPFreedomHelpersTests(unittest.TestCase):
         result = normalize_candles(payload, now=1000)
         self.assertEqual([row["from"] for row in result], [900])
 
+    def test_converts_iso_candle_time_to_unix(self):
+        payload = {
+            "candles": [
+                {
+                    "from": "2026-09-13T15:41:00Z",
+                    "open": 1,
+                    "close": 2,
+                    "min": 1,
+                    "max": 2,
+                }
+            ]
+        }
+        result = normalize_candles(payload, now=1789314181)
+        self.assertEqual(result[0]["from"], 1789314060)
+
 
 if __name__ == "__main__":
     unittest.main()
