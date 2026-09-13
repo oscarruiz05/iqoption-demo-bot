@@ -83,8 +83,8 @@ def normalize_candles(payload: Any, now: int) -> list[dict[str, Any]]:
     normalized = []
     for row in rows:
         candle = dict(row)
-        if "from" not in candle and "start" in candle:
-            candle["from"] = parse_expiration(candle["start"])
+        raw_from = candle.get("from", candle.get("start"))
+        candle["from"] = parse_expiration(raw_from)
         if "max" not in candle and "high" in candle:
             candle["max"] = candle["high"]
         if "min" not in candle and "low" in candle:
