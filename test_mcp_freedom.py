@@ -2,6 +2,7 @@ import unittest
 
 from mcp_discovery import MCPConfigurationError
 from mcp_freedom import (
+    canonical_asset_name,
     choose_expiration,
     normalize_candles,
     select_assets,
@@ -10,6 +11,10 @@ from mcp_freedom import (
 
 
 class MCPFreedomHelpersTests(unittest.TestCase):
+    def test_normalizes_iq_option_display_names(self):
+        self.assertEqual(canonical_asset_name("EUR/USD (OTC)"), "EURUSDOTC")
+        self.assertEqual(canonical_asset_name("EURUSD-OTC"), "EURUSDOTC")
+
     def test_selects_training_balance(self):
         rows = [
             {"balance_id": 1, "type": "regular"},
@@ -23,7 +28,7 @@ class MCPFreedomHelpersTests(unittest.TestCase):
 
     def test_selects_only_requested_open_assets(self):
         rows = [
-            {"asset_id": 1, "name": "EURUSD-OTC", "is_open": True},
+            {"asset_id": 1, "name": "EUR/USD (OTC)", "is_open": True},
             {"asset_id": 2, "name": "GBPUSD-OTC", "is_open": False},
             {"asset_id": 3, "name": "AUDCAD-OTC", "is_open": True},
         ]
