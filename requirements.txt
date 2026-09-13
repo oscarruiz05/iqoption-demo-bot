@@ -3,3 +3,5 @@ numpy>=1.26,<3
 python-dotenv>=1.0,<2
 requests>=2.32,<3
 git+https://github.com/iqoptionapi/iqoptionapi.git
+mcp>=2,<3
+httpx2>=2.5,<3

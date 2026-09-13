@@ -80,6 +80,34 @@ de conectarse. Al arrancar en REAL muestra una advertencia visible. Para volver
 a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 `ENABLE_REAL_TRADING=false` y borrar la confirmación.
 
+
+## Descubrimiento MCP de IQ Option
+
+La primera etapa de la integración MCP es deliberadamente de solo lectura. Instala
+dependencias, define un token nuevo únicamente en tu `.env` local y lista las
+capacidades reales de Turbo y Binary:
+
+```powershell
+python -m pip install -r requirements.txt
+$env:IQ_OPTION_MCP_TOKEN="TOKEN_NUEVO"
+python discover_mcp.py --server all
+```
+
+También puedes consultar cada servidor por separado:
+
+```powershell
+python discover_mcp.py --server turbo-options
+python discover_mcp.py --server binary-options
+```
+
+El comando realiza la negociación MCP y `tools/list`, pero no llama ninguna
+herramienta ni envía operaciones. La salida muestra nombres, descripciones y esquemas,
+y marca herramientas potencialmente capaces de modificar posiciones.
+
+No uses un token publicado en mensajes, commits o capturas. Rótalo antes de ejecutar
+la prueba. La ejecución MCP se integrará únicamente después de revisar los esquemas
+reales; hasta entonces el bot continúa usando la conexión legacy existente.
+
 ## Configuración inicial
 
 - `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
