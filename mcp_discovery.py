@@ -15,9 +15,10 @@ ALLOWED_SERVERS = {
     "turbo-options": "https://turbo-options.mcp.iqoption.com",
     "binary-options": "https://binary-options.mcp.iqoption.com",
 }
-WRITE_HINTS = (
-    "buy", "sell", "order", "trade", "position", "execute", "purchase", "open", "close"
+WRITE_PREFIXES = (
+    "place_", "buy_", "sell_", "open_", "execute_", "rollover_", "submit_"
 )
+WRITE_TOOL_NAMES = {"place_trade", "create_order"}
 
 
 class MCPConfigurationError(ValueError):
@@ -60,8 +61,9 @@ def validate_server_url(server: str, url: str) -> str:
 
 
 def classify_tool(name: str, description: str = "") -> bool:
-    text = f"{name} {description}".lower()
-    return any(hint in text for hint in WRITE_HINTS)
+    """Classify by tool name; descriptions often mention trades in read-only tools."""
+    normalized = name.strip().lower()
+    return normalized in WRITE_TOOL_NAMES or normalized.startswith(WRITE_PREFIXES)
 
 
 def _model_dict(value: Any) -> dict[str, Any]:
