@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -105,14 +106,20 @@ def select_balance(rows: list[dict[str, Any]], account: str) -> dict[str, Any]:
     return matches[0]
 
 
+def canonical_asset_name(value: Any) -> str:
+    """Match EURUSD-OTC, EUR/USD (OTC), and similar display formats."""
+    return re.sub(r"[^A-Z0-9]", "", str(value).upper())
+
+
 def select_assets(
     rows: list[dict[str, Any]], requested_names: set[str]
 ) -> list[dict[str, Any]]:
+    requested = {canonical_asset_name(name) for name in requested_names}
     return [
         row
         for row in rows
         if bool(row.get("is_open", True))
-        and str(row.get("name", "")).upper() in requested_names
+        and canonical_asset_name(row.get("name", "")) in requested
     ]
 
 
@@ -128,10 +135,8 @@ async def scan_once(
         await provider.list_balances(account), "balances"
     )
     balance = select_balance(balance_rows, account)
-    assets = select_assets(
-        extract_rows(await provider.list_assets(True), "assets"),
-        requested_names,
-    )
+    available_assets = extract_rows(await provider.list_assets(True), "assets")
+    assets = select_assets(available_assets, requested_names)
     LOGGER.info(
         "MCP=%s | cuenta=%s | activos abiertos=%d | trading=%s",
         provider.mode,
@@ -139,6 +144,15 @@ async def scan_once(
         len(assets),
         provider.allow_writes,
     )
+    if not assets:
+        available_names = sorted(
+            str(row.get("name", "")) for row in available_assets if row.get("name")
+        )
+        LOGGER.warning(
+            "Ningún MCP_ASSETS coincide. Solicitados=%s | disponibles=%s",
+            ", ".join(sorted(requested_names)),
+            ", ".join(available_names[:30]) or "ninguno",
+        )
 
     operations = 0
     for asset in assets:
@@ -199,6 +213,8 @@ async def run() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("mcp").setLevel(logging.WARNING)
     token = os.getenv("IQ_OPTION_MCP_TOKEN", "").strip()
     account = os.getenv("MCP_ACCOUNT", "TRAINING").strip().upper()
     if account not in {"TRAINING", "NORMAL"}:
