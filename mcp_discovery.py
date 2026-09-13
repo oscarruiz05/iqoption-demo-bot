@@ -15,9 +15,14 @@ ALLOWED_SERVERS = {
     "turbo-options": "https://turbo-options.mcp.iqoption.com",
     "binary-options": "https://binary-options.mcp.iqoption.com",
 }
-WRITE_HINTS = (
-    "buy", "sell", "order", "trade", "position", "execute", "purchase", "open", "close"
+WRITE_PREFIXES = (
+    "place_", "buy_", "sell_", "open_", "execute_", "rollover_", "submit_"
 )
+WRITE_TOOL_NAMES = {"place_trade", "create_order"}
+READ_ONLY_TOOLS = {
+    "get_capabilities", "get_limits", "get_candles", "get_trade_history",
+    "list_assets", "list_balances", "list_positions",
+}
 
 
 class MCPConfigurationError(ValueError):
@@ -60,8 +65,9 @@ def validate_server_url(server: str, url: str) -> str:
 
 
 def classify_tool(name: str, description: str = "") -> bool:
-    text = f"{name} {description}".lower()
-    return any(hint in text for hint in WRITE_HINTS)
+    """Classify by tool name; descriptions often mention trades in read-only tools."""
+    normalized = name.strip().lower()
+    return normalized in WRITE_TOOL_NAMES or normalized.startswith(WRITE_PREFIXES)
 
 
 def _model_dict(value: Any) -> dict[str, Any]:
@@ -137,6 +143,62 @@ async def discover_server(
         message = str(exc).replace(token, "[REDACTED]")
         raise MCPDiscoveryError(
             f"No se pudo descubrir {server}: {message}"
+        ) from exc
+
+
+async def call_read_only_tool(
+    server: str,
+    token: str,
+    tool_name: str,
+    arguments: dict[str, Any] | None = None,
+    *,
+    timeout_seconds: float = 10.0,
+) -> dict[str, Any]:
+    """Invoke only an explicitly allowlisted read operation."""
+    if tool_name not in READ_ONLY_TOOLS:
+        raise MCPConfigurationError(
+            f"La herramienta no está autorizada en modo lectura: {tool_name}"
+        )
+    endpoint = validate_server_url(server, ALLOWED_SERVERS.get(server, ""))
+    if not token.strip():
+        raise MCPConfigurationError("Falta IQ_OPTION_MCP_TOKEN")
+
+    try:
+        import httpx2
+        from mcp import Client
+        from mcp.client.streamable_http import streamable_http_client
+    except ImportError as exc:
+        raise MCPConfigurationError(
+            'Instala las dependencias con: pip install -r requirements.txt'
+        ) from exc
+
+    try:
+        timeout = httpx2.Timeout(timeout_seconds, read=timeout_seconds)
+        async with httpx2.AsyncClient(
+            headers={"Authorization": f"Bearer {token}"}, timeout=timeout
+        ) as http_client:
+            transport = streamable_http_client(endpoint, http_client=http_client)
+            async with Client(transport) as client:
+                available = {tool.name for tool in (await client.list_tools()).tools}
+                if tool_name not in available:
+                    raise MCPConfigurationError(
+                        f"{server} no expone la herramienta {tool_name}"
+                    )
+                result = await client.call_tool(tool_name, arguments or {})
+                if getattr(result, "is_error", False):
+                    raise MCPDiscoveryError(
+                        f"{server}.{tool_name} devolvió un error"
+                    )
+                structured = getattr(result, "structured_content", None)
+                if structured is not None:
+                    return _model_dict(structured)
+                return _model_dict(result)
+    except (MCPConfigurationError, MCPDiscoveryError):
+        raise
+    except Exception as exc:
+        message = str(exc).replace(token, "[REDACTED]")
+        raise MCPDiscoveryError(
+            f"Falló la consulta {server}.{tool_name}: {message}"
         ) from exc
 
 

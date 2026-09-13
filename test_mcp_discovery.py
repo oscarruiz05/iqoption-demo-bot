@@ -1,7 +1,9 @@
+import asyncio
 import unittest
 
 from mcp_discovery import (
     MCPConfigurationError,
+    call_read_only_tool,
     classify_tool,
     validate_server_url,
 )
@@ -38,6 +40,24 @@ class MCPDiscoveryTests(unittest.TestCase):
 
     def test_keeps_market_data_tool_read_only(self):
         self.assertFalse(classify_tool("get_candles", "Read historical candles"))
+
+    def test_read_tools_are_not_misclassified_by_their_descriptions(self):
+        self.assertFalse(classify_tool("list_assets", "Assets used to place trades"))
+        self.assertFalse(classify_tool("list_positions", "Currently open positions"))
+        self.assertFalse(classify_tool("get_trade_history", "Closed trades"))
+
+    def test_marks_real_iq_order_tools_as_writes(self):
+        self.assertTrue(classify_tool("place_trade"))
+        self.assertTrue(classify_tool("rollover_position"))
+        self.assertTrue(classify_tool("sell_position"))
+
+    def test_read_only_client_refuses_place_trade(self):
+        with self.assertRaises(MCPConfigurationError):
+            asyncio.run(
+                call_read_only_tool(
+                    "binary-options", "fake-token", "place_trade", {}
+                )
+            )
 
 
 if __name__ == "__main__":
