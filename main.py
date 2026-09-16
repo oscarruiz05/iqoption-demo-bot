@@ -125,11 +125,19 @@ def main():
     cfg.validate()
     if cfg.account == "REAL":
         log.warning("MODO REAL SELECCIONADO | las operaciones usan dinero real")
+        if not cfg.enforce_risk_limits:
+            log.warning("REAL | límites diarios, porcentuales y de racha desactivados")
+        if not cfg.require_validation_for_real:
+            log.warning("REAL | validación histórica de la estrategia desactivada")
+        if not cfg.enforce_max_real_amount:
+            log.warning("REAL | MAX_REAL_AMOUNT desactivado; se usará IQ_AMOUNT")
+        if not cfg.enforce_min_payout:
+            log.warning("REAL | filtro de payout desactivado")
     client = connect_with_retry(cfg)
     payouts = PayoutCache(client)
     balance = float(client.get_balance())
     max_stake = balance * cfg.max_risk_per_trade_pct / 100
-    if cfg.enable_trading and cfg.amount > max_stake:
+    if cfg.enforce_risk_limits and cfg.enable_trading and cfg.amount > max_stake:
         message = (
             f"IQ_AMOUNT={cfg.amount:g} arriesga más de {cfg.max_risk_per_trade_pct:g}% "
             f"del saldo ({max_stake:.2f})"
@@ -139,7 +147,9 @@ def main():
         if cfg.show_practice_risk_warnings:
             log.warning("PRACTICE | %s; se respeta el monto elegido por el usuario", message)
     percentage_daily_loss = balance * cfg.max_daily_loss_pct / 100
-    if cfg.account == "REAL":
+    if not cfg.enforce_risk_limits:
+        effective_daily_loss = float("inf")
+    elif cfg.account == "REAL":
         effective_daily_loss = min(cfg.max_daily_loss, percentage_daily_loss)
     else:
         effective_daily_loss = cfg.max_daily_loss
@@ -185,7 +195,7 @@ def main():
                 TRADE_PATH, cfg.max_trades_day, cfg.max_consecutive_losses,
                 effective_daily_loss, day=risk_day, day_timezone=risk_timezone,
             )
-        if cfg.enable_trading:
+        if cfg.enable_trading and cfg.enforce_risk_limits:
             allowed, reason = risk.can_trade(cfg.amount)
             if not allowed:
                 log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
@@ -208,7 +218,7 @@ def main():
                     cfg.assets, asset_cursor, cfg.asset_batch_size
                 )
             for asset in asset_batch:
-                if cfg.enable_trading:
+                if cfg.enable_trading and cfg.enforce_risk_limits:
                     allowed, reason = risk.can_trade(cfg.amount)
                     if not allowed:
                         log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
@@ -265,17 +275,19 @@ def main():
                         format_signal_metrics(signal),
                     )
                     if cfg.enable_trading:
-                        try:
-                            quoted_payout = payouts.get(asset, expiration_min)
-                        except Exception as payout_error:
-                            log.warning("%s | No se pudo consultar payout; operación omitida: %s",
-                                        asset, payout_error)
-                            continue
-                        if quoted_payout is None or quoted_payout < cfg.min_payout:
-                            shown = "no disponible" if quoted_payout is None else f"{quoted_payout:.0%}"
-                            log.info("%s | Payout %s inferior al mínimo %.0f%%; señal omitida",
-                                     asset, shown, cfg.min_payout * 100)
-                            continue
+                        quoted_payout = None
+                        if cfg.enforce_min_payout:
+                            try:
+                                quoted_payout = payouts.get(asset, expiration_min)
+                            except Exception as payout_error:
+                                log.warning("%s | No se pudo consultar payout; operación omitida: %s",
+                                            asset, payout_error)
+                                continue
+                            if quoted_payout is None or quoted_payout < cfg.min_payout:
+                                shown = "no disponible" if quoted_payout is None else f"{quoted_payout:.0%}"
+                                log.info("%s | Payout %s inferior al mínimo %.0f%%; señal omitida",
+                                         asset, shown, cfg.min_payout * 100)
+                                continue
                         ok, order_id = client.buy(
                             cfg.amount, asset, signal.direction, expiration_min
                         )
