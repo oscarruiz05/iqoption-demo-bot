@@ -202,6 +202,11 @@ class ConfigTests(unittest.TestCase):
     def test_real_trading_accepts_all_safeguards(self):
         validate_account_mode("REAL", True, True, REAL_CONFIRMATION_PHRASE, 1, 1)
 
+    def test_real_amount_limit_can_be_disabled_explicitly(self):
+        validate_account_mode(
+            "REAL", True, True, REAL_CONFIRMATION_PHRASE, 5, 1, False
+        )
+
     def test_rejects_unknown_account(self):
         with self.assertRaises(ValueError):
             validate_account_mode("DEMO", False, False, "", 1, 1)

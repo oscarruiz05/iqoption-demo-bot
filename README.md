@@ -80,6 +80,28 @@ de conectarse. Al arrancar en REAL muestra una advertencia visible. Para volver
 a demo cambia `IQ_ACCOUNT=PRACTICE`; conviene además restaurar
 `ENABLE_REAL_TRADING=false` y borrar la confirmación.
 
+Para una ejecución experimental sin los bloqueos configurables (el bot seguirá
+exigiendo cuenta REAL, habilitación y frase de confirmación explícitas):
+
+```dotenv
+IQ_ACCOUNT=REAL
+ENABLE_TRADING=true
+ENABLE_REAL_TRADING=true
+REAL_TRADING_CONFIRMATION=ACEPTO_RIESGO_REAL
+IQ_AMOUNT=1
+
+ENFORCE_MAX_REAL_AMOUNT=false
+ENFORCE_RISK_LIMITS=false
+REQUIRE_VALIDATION_FOR_REAL=false
+ENFORCE_MIN_PAYOUT=false
+MIN_CANDLES_BETWEEN_TRADES=0
+```
+
+Con esos interruptores el bot no se detiene por `MAX_REAL_AMOUNT`, porcentaje
+por entrada, pérdida diaria, cantidad de operaciones, racha de pérdidas,
+muestra histórica ni payout mínimo. Los valores se siguen registrando en
+`trades.csv`; las órdenes rechazadas o los activos cerrados dependen de IQ Option.
+
 ## Configuración inicial
 
 - `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
