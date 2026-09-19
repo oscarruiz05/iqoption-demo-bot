@@ -107,7 +107,7 @@ def run_backtest(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest sin look-ahead sobre velas OHLC.")
     parser.add_argument("candles_csv")
-    parser.add_argument("--strategy", choices=("trend", "support_channel", "bollinger_reversal", "freedom"), default="trend")
+    parser.add_argument("--strategy", choices=("trend", "support_channel", "bollinger_reversal", "freedom", "freedom_v3"), default="trend")
     parser.add_argument("--payout", type=float, required=True,
                         help="Ganancia neta por unidad arriesgada; por ejemplo 0.82")
     parser.add_argument("--stake", type=float, default=1.0)

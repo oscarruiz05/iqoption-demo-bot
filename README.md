@@ -107,7 +107,7 @@ muestra histórica ni payout mínimo. Los valores se siguen registrando en
 - `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
-- `IQ_STRATEGY=trend`: admite `trend`, `support_channel`, `bollinger_reversal` o `freedom`.
+- `IQ_STRATEGY=trend`: admite `trend`, `support_channel`, `bollinger_reversal`, `freedom` o `freedom_v3`.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
 - `MAX_RISK_PER_TRADE_PCT=1`: riesgo máximo de una operación como porcentaje del saldo; admite valores mayores que 0 y hasta 100.
 - `MAX_DAILY_LOSS_PCT=3`: segundo tope diario relativo al saldo; admite valores mayores que 0 y hasta 100, y se usa el más estricto.
@@ -243,6 +243,28 @@ IQ_EXPIRATION_MIN=5
 ```
 
 La señal usa únicamente velas cerradas y se ejecuta en la apertura de la vela siguiente.
+
+### Freedom v3 (`freedom_v3`, experimental)
+
+Mantiene los filtros de tendencia y extremo de Freedom v2, pero no entra al cierre
+de la vela que rompe Bollinger. Espera una vela adicional que:
+
+- cierre nuevamente dentro de la banda;
+- sea alcista para CALL o bajista para PUT;
+- muestre recuperación del RSI 10 desde el extremo;
+- no forme parte de un *band walk*: entre la vela de ruptura y las dos anteriores,
+  solamente una puede haber cerrado fuera de la banda correspondiente.
+
+Usa velas de un minuto y expiración fija de cinco minutos:
+
+```dotenv
+IQ_STRATEGY=freedom_v3
+IQ_TIMEFRAME_MIN=1
+IQ_EXPIRATION_MIN=5
+```
+
+El análisis preliminar sobre cuatro archivos de 20.000 velas produjo 32 señales;
+es una muestra pequeña, por lo que esta versión debe validarse primero en PRACTICE.
 
 En temporalidad M1 el bot inicia un ciclo por todos los pares al detectar un nuevo
 minuto, sin la espera de diez segundos entre lotes. El log y `trades.csv` registran
