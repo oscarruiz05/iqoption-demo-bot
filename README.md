@@ -242,6 +242,10 @@ IQ_TIMEFRAME_MIN=1
 IQ_EXPIRATION_MIN=5
 ```
 
+Mientras está activo, el bot muestra un mensaje `ESTADO` cada cinco minutos con
+los ciclos completados, pares consultados, respuestas con velas, señales detectadas
+y la última vela cerrada. Se puede cambiar con `STATUS_LOG_INTERVAL_MIN`.
+
 La señal usa únicamente velas cerradas y se ejecuta en la apertura de la vela siguiente.
 
 ### Freedom v3 (`freedom_v3`, experimental)

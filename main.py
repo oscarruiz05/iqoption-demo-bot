@@ -25,6 +25,7 @@ TRADE_HEADERS = [
     "trend_side_count", "band_break_atr", "signal_delay_seconds",
 ]
 TRADE_PATH = Path(__file__).with_name("trades.csv")
+FREEDOM_STRATEGIES = {"freedom", "freedom_v3"}
 FREEDOM_MAX_SIGNAL_DELAY_SECONDS = 8.0
 
 
@@ -184,6 +185,12 @@ def main():
     next_trade_candle = {asset: 0 for asset in cfg.assets}
     asset_cursor = 0
     last_minute_scan = None
+    last_status_log = time.monotonic()
+    status_scans = 0
+    status_assets_queried = 0
+    status_assets_with_candles = 0
+    status_signals = 0
+    last_closed_candle = None
     log.info("Cuenta=%s | configurados=%s | estrategia=%s | monto=%.2f | trading=%s",
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
@@ -217,6 +224,7 @@ def main():
                 asset_batch, asset_cursor = next_asset_batch(
                     cfg.assets, asset_cursor, cfg.asset_batch_size
                 )
+            status_scans += 1
             for asset in asset_batch:
                 if cfg.enable_trading and cfg.enforce_risk_limits:
                     allowed, reason = risk.can_trade(cfg.amount)
@@ -227,6 +235,7 @@ def main():
                     continue
                 now = int(time.time())
                 try:
+                    status_assets_queried += 1
                     candles = client.get_candles(
                         asset, timeframe_seconds, history_candles, now
                     )
@@ -245,9 +254,14 @@ def main():
                     disabled_until[asset] = time.monotonic() + 300
                     log.warning("%s | Sin velas; omitido durante 5 minutos", asset)
                     continue
+                status_assets_with_candles += 1
                 closed = [c for c in candles if int(c["from"]) + timeframe_seconds <= now]
+                if closed:
+                    candle_time = int(closed[-1]["from"])
+                    last_closed_candle = max(last_closed_candle or candle_time, candle_time)
                 signal = get_signal(closed, cfg.strategy)
                 if signal and signal.candle_time != last_signal_candles[asset]:
+                    status_signals += 1
                     last_signal_candles[asset] = signal.candle_time
                     if signal.candle_time < next_trade_candle[asset]:
                         log.info("%s | Señal omitida por espera entre operaciones", asset)
@@ -257,7 +271,7 @@ def main():
                         0.0, time.time() - (signal.candle_time + timeframe_seconds)
                     )
                     if (
-                        signal.strategy == "freedom"
+                        signal.strategy in FREEDOM_STRATEGIES
                         and signal_delay_seconds > FREEDOM_MAX_SIGNAL_DELAY_SECONDS
                     ):
                         log.info(
@@ -314,6 +328,25 @@ def main():
                                 quoted_payout, expiration_min, signal_delay_seconds,
                             )
                             log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
+            status_elapsed = time.monotonic() - last_status_log
+            if status_elapsed >= cfg.status_log_interval_min * 60:
+                if last_closed_candle is None:
+                    last_candle_text = "ninguna"
+                else:
+                    last_candle_text = datetime.fromtimestamp(
+                        last_closed_candle, timezone.utc
+                    ).isoformat()
+                log.info(
+                    "ESTADO | activo | conexión=%s | ciclos=%d | consultas=%d | "
+                    "con_velas=%d | señales=%d | última_vela_UTC=%s",
+                    client.check_connect(), status_scans, status_assets_queried,
+                    status_assets_with_candles, status_signals, last_candle_text,
+                )
+                last_status_log = time.monotonic()
+                status_scans = 0
+                status_assets_queried = 0
+                status_assets_with_candles = 0
+                status_signals = 0
             if timeframe_seconds != 60:
                 time.sleep(10)
         except KeyboardInterrupt:
