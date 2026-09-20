@@ -74,6 +74,7 @@ class Settings:
     asset_request_delay_seconds: float = float(
         os.getenv("ASSET_REQUEST_DELAY_SECONDS", "0.75")
     )
+    status_log_interval_min: int = int(os.getenv("STATUS_LOG_INTERVAL_MIN", "5"))
 
     def validate(self) -> None:
         if not self.email or not self.password:
@@ -94,6 +95,8 @@ class Settings:
             raise ValueError("ASSET_BATCH_SIZE debe ser al menos 1")
         if not 0 <= self.asset_request_delay_seconds <= 10:
             raise ValueError("ASSET_REQUEST_DELAY_SECONDS debe estar entre 0 y 10")
+        if self.status_log_interval_min < 1:
+            raise ValueError("STATUS_LOG_INTERVAL_MIN debe ser al menos 1")
         if self.enforce_risk_limits and not 0 < self.max_risk_per_trade_pct <= 100:
             raise ValueError("MAX_RISK_PER_TRADE_PCT debe estar entre 0 y 100")
         if self.enforce_risk_limits and not 0 < self.max_daily_loss_pct <= 100:
