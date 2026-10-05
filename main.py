@@ -25,7 +25,7 @@ TRADE_HEADERS = [
     "trend_side_count", "band_break_atr", "signal_delay_seconds",
 ]
 TRADE_PATH = Path(__file__).with_name("trades.csv")
-FREEDOM_STRATEGIES = {"freedom", "freedom_v3"}
+FREEDOM_STRATEGIES = {"freedom", "freedom_v3", "freedom_v4"}
 FREEDOM_MAX_SIGNAL_DELAY_SECONDS = 8.0
 
 
