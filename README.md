@@ -107,7 +107,7 @@ muestra histórica ni payout mínimo. Los valores se siguen registrando en
 - `IQ_ASSETS`: admite simultáneamente pares normales y OTC; por ejemplo, `EURUSD,EURUSD-OTC,GBPUSD,GBPUSD-OTC`.
 - `IQ_TIMEFRAME_MIN=5`: velas de cinco minutos.
 - `IQ_EXPIRATION_MIN=5`: vencimiento de cinco minutos.
-- `IQ_STRATEGY=trend`: admite `trend`, `support_channel`, `bollinger_reversal`, `freedom` o `freedom_v3`.
+- `IQ_STRATEGY=trend`: admite `trend`, `support_channel`, `bollinger_reversal`, `freedom`, `freedom_v3` o `freedom_v4`.
 - `MAX_DAILY_LOSS=5`: pérdida máxima en la moneda de la cuenta seleccionada.
 - `MAX_RISK_PER_TRADE_PCT=1`: riesgo máximo de una operación como porcentaje del saldo; admite valores mayores que 0 y hasta 100.
 - `MAX_DAILY_LOSS_PCT=3`: segundo tope diario relativo al saldo; admite valores mayores que 0 y hasta 100, y se usa el más estricto.
@@ -269,6 +269,28 @@ IQ_EXPIRATION_MIN=5
 
 El análisis preliminar sobre cuatro archivos de 20.000 velas produjo 32 señales;
 es una muestra pequeña, por lo que esta versión debe validarse primero en PRACTICE.
+
+### Freedom v4 (`freedom_v4`, experimental)
+
+Conserva los filtros de Freedom v3 y añade dos condiciones elegidas con los tramos
+de desarrollo y validación:
+
+- la ruptura cerrada fuera de Bollinger debe medir entre 0,25 y 0,60 ATR;
+- la vela de confirmación debe cerrar al menos 0,10 ATR dentro de la banda.
+
+Esto evita entrar después de extensiones excesivas y descarta reingresos apenas
+superficiales. Usa M1 y vencimiento fijo de cinco minutos:
+
+```dotenv
+IQ_STRATEGY=freedom_v4
+IQ_TIMEFRAME_MIN=1
+IQ_EXPIRATION_MIN=5
+IQ_ASSETS=AUDCAD-OTC,AUDUSD,USDJPY-OTC
+```
+
+En el histórico disponible, EURUSD no superó el punto de equilibrio durante
+desarrollo y validación, por lo que no forma parte de la cartera recomendada.
+La muestra aún es reducida y no garantiza el rendimiento futuro.
 
 En temporalidad M1 el bot inicia un ciclo por todos los pares al detectar un nuevo
 minuto, sin la espera de diez segundos entre lotes. El log y `trades.csv` registran
