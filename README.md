@@ -51,6 +51,21 @@ ENABLE_TRADING=true
 
 Ejecuta con `python main.py`. El registro debe mostrar `Conectado a PRACTICE`.
 
+Para dejarlo funcionando sin supervisión, usa el script que lo reinicia si se bloquea:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run_bot.ps1
+```
+
+Algunas funciones de la API comunitaria esperan la respuesta del WebSocket sin límite
+de tiempo; si la conexión cae en ese momento, el bot quedaba congelado. Un vigilante
+revisa que el ciclo avance: tras 3 minutos sin progreso interrumpe la espera y fuerza
+la reconexión (`VIGILANTE` en el log), y si 2 minutos después sigue bloqueado termina
+el proceso con código 3, que `run_bot.ps1` reinicia a los 10 segundos. Las órdenes
+abiertas se guardan en `pending_orders.json`, de modo que tras un reinicio (o un
+Ctrl+C) su resultado se registra igualmente en `trades.csv` y cuenta en los límites
+diarios.
+
 ## Cambio protegido a cuenta REAL
 
 Primero prueba la conexión real sin enviar órdenes:

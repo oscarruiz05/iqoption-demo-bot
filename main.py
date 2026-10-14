@@ -1,5 +1,7 @@
 import csv
 import logging
+import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,11 +13,13 @@ from config import Settings
 from performance import analyze_pnls, format_report, read_trade_pnls
 from orders import (
     RESULT_FALLBACK_INTERVAL_SECONDS, RESULT_FALLBACK_SECONDS, CandleCache, PendingOrder,
-    entry_slippage_atr, find_closed_option_pnl, order_entry_price, poll_order_pnl,
+    entry_slippage_atr, find_closed_option_pnl, load_pending_orders, order_entry_price,
+    poll_order_pnl, save_pending_orders,
 )
 from payout import PayoutCache
 from risk import load_daily_risk
 from strategy import STRATEGY_VERSIONS, STRATEGY_WINDOWS, get_signal
+from watchdog import WATCHDOG_EXIT_CODE, Watchdog
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
                     handlers=[logging.StreamHandler(), logging.FileHandler("bot.log", encoding="utf-8")])
@@ -34,6 +38,12 @@ METRIC_COLUMNS = (
     "rsi10", "trend_side_count", "band_break_atr", "atr14",
 )
 TRADE_PATH = Path(__file__).with_name("trades.csv")
+PENDING_PATH = Path(__file__).with_name("pending_orders.json")
+# Sin avance durante este tiempo se interrumpe la espera y se fuerza la reconexión;
+# si sigue bloqueado tras el segundo plazo, el proceso termina para que run_bot.ps1
+# lo reinicie. Supera el peor caso legítimo de connect_with_retry (~65 s + conexión).
+WATCHDOG_STALL_SECONDS = 180
+WATCHDOG_HARD_EXIT_SECONDS = 120
 FREEDOM_STRATEGIES = {"freedom", "freedom_v3", "freedom_v4"}
 FREEDOM_MAX_SIGNAL_DELAY_SECONDS = 8.0
 # La API de IQ Option entrega como máximo 1000 velas por consulta.
@@ -135,8 +145,6 @@ def resolve_pending_orders(client, pending: dict, risk) -> None:
             continue
         if pnl is None:
             continue
-        del pending[order_id]
-        risk.record(pnl)
         entry_price = order_entry_price(client, order_id)
         slippage = entry_slippage_atr(
             order.signal.direction, entry_price, order.reference_open,
@@ -146,7 +154,13 @@ def resolve_pending_orders(client, pending: dict, risk) -> None:
             balance_after = float(client.get_balance())
         except Exception:
             balance_after = None
+        # Primero trades.csv y después se quita de pending_orders.json: si el proceso
+        # muere entre ambos pasos se duplica la fila (límites más estrictos) en vez
+        # de perderla.
         save_trade(order, pnl, balance_after, entry_price, slippage)
+        del pending[order_id]
+        save_pending_orders(PENDING_PATH, pending)
+        risk.record(pnl)
         log.info(
             "%s | Resultado orden %s PnL=%.2f | diario=%.2f | entrada=%s ref_open=%s "
             "deslizamientoATR=%s | abiertas=%d",
@@ -171,6 +185,24 @@ def format_signal_metrics(signal) -> str:
     )
 
 
+def _on_soft_stall(stalled_seconds: float) -> None:
+    log.error("VIGILANTE | el ciclo lleva %.0fs sin avanzar; se interrumpe la espera "
+              "y se fuerza la reconexión", stalled_seconds)
+
+
+def _on_hard_stall(stalled_seconds: float) -> None:
+    log.critical("VIGILANTE | sigue bloqueado tras %.0fs; el proceso termina con código %d "
+                 "para que run_bot.ps1 lo reinicie", stalled_seconds, WATCHDOG_EXIT_CODE)
+    logging.shutdown()
+    # sys.exit no sirve desde otro hilo y el hilo principal está atrapado en la API.
+    os._exit(WATCHDOG_EXIT_CODE)
+
+
+WATCHDOG = Watchdog(
+    WATCHDOG_STALL_SECONDS, WATCHDOG_HARD_EXIT_SECONDS, _on_soft_stall, _on_hard_stall,
+)
+
+
 def connect(settings):
     client = IQ_Option(settings.email, settings.password)
     ok, reason = client.connect()
@@ -185,6 +217,7 @@ def connect_with_retry(settings, attempts=5):
     delay = 5
     last_error = None
     for attempt in range(1, attempts + 1):
+        WATCHDOG.beat()
         try:
             return connect(settings)
         except Exception as exc:
@@ -194,6 +227,19 @@ def connect_with_retry(settings, attempts=5):
                 time.sleep(delay)
                 delay = min(delay * 2, 30)
     raise ConnectionError(f"No fue posible reconectar tras {attempts} intentos: {last_error}")
+
+
+def reconnect(settings):
+    """Devuelve un cliente nuevo, o None si se agotaron los intentos."""
+    time.sleep(5)
+    try:
+        client = connect_with_retry(settings)
+    except ConnectionError as reconnect_error:
+        log.error("Reconexión agotada; se intentara nuevamente: %s", reconnect_error)
+        time.sleep(60)
+        return None
+    log.info("Conexion restablecida; se reanuda el escaneo por lotes")
+    return client
 
 
 def main():
@@ -209,6 +255,7 @@ def main():
             log.warning("REAL | MAX_REAL_AMOUNT desactivado; se usará IQ_AMOUNT")
         if not cfg.enforce_min_payout:
             log.warning("REAL | filtro de payout desactivado")
+    WATCHDOG.start()
     client = connect_with_retry(cfg)
     payouts = PayoutCache(client)
     balance = float(client.get_balance())
@@ -259,7 +306,11 @@ def main():
     candle_cache = CandleCache(
         min(STRATEGY_WINDOWS[cfg.strategy] + 1, MAX_CANDLES_PER_REQUEST)
     )
-    pending: dict[int, PendingOrder] = {}
+    # Órdenes que quedaron abiertas en una ejecución anterior (reinicio o Ctrl+C).
+    pending: dict[int, PendingOrder] = load_pending_orders(PENDING_PATH)
+    if pending:
+        log.warning("Recuperadas %d órdenes abiertas de la ejecución anterior: %s",
+                    len(pending), ", ".join(str(order_id) for order_id in pending))
     disabled_until = {asset: 0.0 for asset in cfg.assets}
     next_trade_candle = {asset: 0 for asset in cfg.assets}
     asset_cursor = 0
@@ -274,6 +325,7 @@ def main():
              cfg.account, ", ".join(cfg.assets), cfg.strategy, cfg.amount, cfg.enable_trading)
 
     while True:
+        WATCHDOG.beat()
         current_day = datetime.now(risk_timezone).date()
         if current_day != risk_day:
             risk_day = current_day
@@ -325,6 +377,7 @@ def main():
                         asset, timeframe_seconds,
                         candle_cache.request_count(asset, now, timeframe_seconds), now,
                     )
+                    WATCHDOG.beat()
                     # En M1 la pausa retrasaría la entrada de los pares siguientes;
                     # la caché ya reduce cada consulta a unas pocas velas.
                     if cfg.asset_request_delay_seconds and timeframe_seconds != 60:
@@ -437,6 +490,7 @@ def main():
                                 order_delay_seconds=ordered_at - entry_candle_time,
                                 reference_open=reference_open,
                             )
+                            save_pending_orders(PENDING_PATH, pending)
                             next_trade_candle[asset] = (
                                 signal.candle_time
                                 + cfg.min_candles_between_trades * timeframe_seconds
@@ -469,11 +523,18 @@ def main():
             if timeframe_seconds != 60:
                 time.sleep(10)
         except KeyboardInterrupt:
-            log.info("Detenido por el usuario")
-            if pending:
-                log.warning("Órdenes abiertas sin registrar en trades.csv: %s",
-                            ", ".join(str(order_id) for order_id in pending))
-            break
+            if not WATCHDOG.take_interrupt():
+                log.info("Detenido por el usuario")
+                if pending:
+                    log.warning("Órdenes abiertas guardadas en %s; se registrarán al "
+                                "volver a iniciar el bot: %s", PENDING_PATH.name,
+                                ", ".join(str(order_id) for order_id in pending))
+                break
+            log.warning("VIGILANTE | espera de la API interrumpida; reconectando")
+            new_client = reconnect(cfg)
+            if new_client is not None:
+                client = new_client
+                payouts = PayoutCache(client)
         except Exception as exc:
             log.exception("Error recuperable: %s", exc)
             reconnect_required = isinstance(exc, ConnectionError)
@@ -483,17 +544,21 @@ def main():
                 except Exception:
                     reconnect_required = True
             if reconnect_required:
-                time.sleep(5)
-                try:
-                    client = connect_with_retry(cfg)
+                new_client = reconnect(cfg)
+                if new_client is not None:
+                    client = new_client
                     payouts = PayoutCache(client)
-                    log.info("Conexion restablecida; se reanuda el escaneo por lotes")
-                except ConnectionError as reconnect_error:
-                    log.error("Reconexión agotada; se intentara nuevamente: %s", reconnect_error)
-                    time.sleep(60)
             else:
                 time.sleep(15)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # La interrupción del vigilante cayó fuera del try del ciclo (p. ej. durante
+        # una reconexión): se sale con el código que run_bot.ps1 reinicia.
+        if WATCHDOG.take_interrupt():
+            log.error("VIGILANTE | bloqueo fuera del ciclo; el proceso se reinicia")
+            sys.exit(WATCHDOG_EXIT_CODE)
+        log.info("Detenido por el usuario")
