@@ -110,6 +110,7 @@ def detect_freedom_v3_signal(df: pd.DataFrame) -> Optional[Signal]:
             "ema200": float(setup["ema200"]),
             "ema200_slope": ema_slope,
             "ema_slope_atr": ema_slope / atr,
+            "atr14": atr,
             "bb_upper": float(setup["bb_upper14"]),
             "bb_lower": float(setup["bb_lower14"]),
             "rsi10": float(confirmation["rsi10"]),

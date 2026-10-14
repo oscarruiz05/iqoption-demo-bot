@@ -117,8 +117,13 @@ muestra histórica ni payout mínimo. Los valores se siguen registrando en
 - `RISK_TIMEZONE=America/Bogota`: zona usada para reiniciar los límites de cada día.
 
 Los resultados quedan en `trades.csv` y el detalle técnico en `bot.log`.
-El bot recorre los pares en el orden configurado y mantiene una sola operación
-abierta a la vez para no exceder los límites de riesgo.
+El bot recorre los pares en el orden configurado. Tras enviar una orden no espera
+su vencimiento: sigue analizando los demás pares y registra el resultado cuando
+IQ Option notifica el cierre (si no llega 90 s después del vencimiento, lo busca en
+el historial de opciones cerradas). `MAX_OPEN_TRADES=3` limita las órdenes
+simultáneas, nunca dos en el mismo par, y cada orden abierta cuenta como pérdida en
+el peor caso para `MAX_TRADES_DAY`, `MAX_CONSECUTIVE_LOSSES` y la pérdida diaria, de
+modo que los límites no pueden superarse aunque todas pierdan.
 Antes de cada orden consulta el payout vigente mediante una caché de un minuto. Si la
 consulta falla o el payout está por debajo de `MIN_PAYOUT`, no opera; el fallo es seguro.
 En `PRACTICE`, superar `MAX_RISK_PER_TRADE_PCT` genera una advertencia pero respeta el
@@ -292,10 +297,25 @@ En el histórico disponible, EURUSD no superó el punto de equilibrio durante
 desarrollo y validación, por lo que no forma parte de la cartera recomendada.
 La muestra aún es reducida y no garantiza el rendimiento futuro.
 
+Todas las versiones de Freedom calculan sus indicadores sobre 999 velas cerradas
+(se solicitan 1000, el máximo de la API) y exigen al menos 800. Con las 240 velas
+anteriores, la EMA200 conservaba ~9% del peso de la primera vela de la ventana y
+cambiaba al desplazarse cada minuto, por lo que difería de la del gráfico y
+alteraba qué velas generaban señal. Solo la primera consulta de cada par descarga
+la ventana completa; después se piden las últimas 5 velas y se combinan con la caché.
+
 En temporalidad M1 el bot inicia un ciclo por todos los pares al detectar un nuevo
-minuto, sin la espera de diez segundos entre lotes. El log y `trades.csv` registran
-EMA200, pendiente, pendiente normalizada por ATR, Bollinger superior/inferior,
-RSI10, magnitud de ruptura en ATR, cantidad de cierres del lado correcto y retraso desde el cierre de la vela.
+minuto, sin la espera de diez segundos entre lotes ni la pausa
+`ASSET_REQUEST_DELAY_SECONDS` entre pares, y renueva el payout en el tiempo muerto
+antes del siguiente minuto para no consultarlo después de una señal. El log y
+`trades.csv` registran EMA200, pendiente, pendiente normalizada por ATR, Bollinger
+superior/inferior, RSI10, ATR14, magnitud de ruptura en ATR, cantidad de cierres del
+lado correcto y retraso desde el cierre de la vela. Para medir la ejecución real
+también guardan `order_delay_seconds` (segundos entre la apertura de la vela de
+entrada y la confirmación de la orden), `reference_open` (la apertura que supone el
+backtest), `entry_price` (cotización de apertura informada por IQ Option) y
+`entry_slippage_atr` (diferencia en ATR; positivo significa una entrada peor que la
+del backtest).
 
 ### Soportes y canales (`support_channel`)
 
