@@ -16,11 +16,18 @@ class PayoutCache:
         self._updated_at = 0.0
         self._profits = {}
 
-    def get(self, asset: str, expiration_min: int) -> float | None:
+    def _refresh_if_older_than(self, max_age: float) -> None:
         now = time.monotonic()
-        if not self._profits or now - self._updated_at >= self.ttl_seconds:
+        if not self._profits or now - self._updated_at >= max_age:
             self._profits = self.client.get_all_profit() or {}
             self._updated_at = now
+
+    def prefetch(self, margin_seconds: float = 15.0) -> None:
+        """Renueva en tiempo muerto para que get() no consulte la API tras una señal."""
+        self._refresh_if_older_than(max(0.0, self.ttl_seconds - margin_seconds))
+
+    def get(self, asset: str, expiration_min: int) -> float | None:
+        self._refresh_if_older_than(self.ttl_seconds)
         raw = self._profits.get(asset, {}).get(option_kind(expiration_min))
         if raw is None:
             return None

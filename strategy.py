@@ -3,13 +3,19 @@ import pandas as pd
 from signals import Signal
 
 
+# Freedom usa EMA200 con adjust=False: con solo 240 velas la primera de la ventana
+# conserva ~9% del peso y la media cambia cada minuto al desplazarse la ventana.
+# 999 velas cerradas (1000 solicitadas, máximo de la API) reducen ese peso a ~0,005%.
+FREEDOM_WINDOW = 999
+FREEDOM_MIN_CANDLES = 800
+
 STRATEGY_WINDOWS = {
     "trend": 80,
     "support_channel": 80,
     "bollinger_reversal": 120,
-    "freedom": 240,
-    "freedom_v3": 240,
-    "freedom_v4": 240,
+    "freedom": FREEDOM_WINDOW,
+    "freedom_v3": FREEDOM_WINDOW,
+    "freedom_v4": FREEDOM_WINDOW,
 }
 
 STRATEGY_VERSIONS = {
@@ -63,9 +69,9 @@ def get_signal(candles: list[dict], strategy_name: str = "trend") -> Optional[Si
     """Uses only closed candles. The caller must omit the currently forming candle."""
     minimum = {
         "bollinger_reversal": 105,
-        "freedom": 205,
-        "freedom_v3": 206,
-        "freedom_v4": 206,
+        "freedom": FREEDOM_MIN_CANDLES,
+        "freedom_v3": FREEDOM_MIN_CANDLES,
+        "freedom_v4": FREEDOM_MIN_CANDLES,
     }.get(strategy_name, 60)
     if len(candles) < minimum:
         return None

@@ -9,8 +9,12 @@ from iqoptionapi.stable_api import IQ_Option
 from assets import is_connection_error, next_asset_batch, rejection_cooldown_seconds
 from config import Settings
 from performance import analyze_pnls, format_report, read_trade_pnls
+from orders import (
+    RESULT_FALLBACK_INTERVAL_SECONDS, RESULT_FALLBACK_SECONDS, CandleCache, PendingOrder,
+    entry_slippage_atr, find_closed_option_pnl, order_entry_price, poll_order_pnl,
+)
 from payout import PayoutCache
-from risk import extract_pnl, load_daily_risk
+from risk import load_daily_risk
 from strategy import STRATEGY_VERSIONS, STRATEGY_WINDOWS, get_signal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
@@ -23,23 +27,31 @@ TRADE_HEADERS = [
     "reason", "balance_after", "payout_ratio", "quoted_payout", "expiration_min",
     "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower", "rsi10",
     "trend_side_count", "band_break_atr", "signal_delay_seconds",
+    "atr14", "order_delay_seconds", "reference_open", "entry_price", "entry_slippage_atr",
 ]
+METRIC_COLUMNS = (
+    "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower",
+    "rsi10", "trend_side_count", "band_break_atr", "atr14",
+)
 TRADE_PATH = Path(__file__).with_name("trades.csv")
 FREEDOM_STRATEGIES = {"freedom", "freedom_v3", "freedom_v4"}
 FREEDOM_MAX_SIGNAL_DELAY_SECONDS = 8.0
+# La API de IQ Option entrega como máximo 1000 velas por consulta.
+MAX_CANDLES_PER_REQUEST = 1000
 
 
-def ensure_trade_schema(path: Path) -> None:
+def ensure_trade_schema(path: Path) -> list[str] | None:
+    """Añade columnas nuevas al CSV y devuelve su encabezado real."""
     if not path.exists():
-        return
+        return None
     with path.open("r", newline="", encoding="utf-8") as file:
         rows = list(csv.reader(file))
     if not rows:
-        return
+        return None
     header = rows[0]
     missing = [column for column in TRADE_HEADERS if column not in header]
     if not missing:
-        return
+        return header
     migrated = [header + missing]
     for row in rows[1:]:
         if not row:
@@ -50,34 +62,97 @@ def ensure_trade_schema(path: Path) -> None:
     with temporary.open("w", newline="", encoding="utf-8") as file:
         csv.writer(file).writerows(migrated)
     temporary.replace(path)
+    return header + missing
+
+
+def _blank(value, digits=None):
+    if value is None:
+        return ""
+    return round(value, digits) if digits is not None else value
 
 
 def save_trade(
-    asset, signal, amount, order_id, pnl, balance_after=None, quoted_payout=None,
-    expiration_min=None, signal_delay_seconds=None,
+    order: PendingOrder, pnl, balance_after=None, entry_price=None, slippage_atr=None,
 ):
     path = TRADE_PATH
-    ensure_trade_schema(path)
-    new = not path.exists()
+    header = ensure_trade_schema(path)
+    signal = order.signal
+    metrics = signal.metrics or {}
+    row = {
+        "utc_time": datetime.now(timezone.utc).isoformat(),
+        "asset": order.asset,
+        "direction": signal.direction,
+        "amount": order.amount,
+        "order_id": order.order_id,
+        "pnl": pnl,
+        "rsi14": round(signal.rsi14, 2),
+        "strategy": signal.strategy,
+        "strategy_version": STRATEGY_VERSIONS[signal.strategy],
+        "candle_time": signal.candle_time,
+        "signal_close": signal.close,
+        "ema20": signal.ema20,
+        "ema50": signal.ema50,
+        "reason": signal.reason,
+        "balance_after": _blank(balance_after),
+        "payout_ratio": pnl / order.amount if pnl > 0 else 0.0,
+        "quoted_payout": _blank(order.quoted_payout),
+        "expiration_min": order.expiration_min,
+        **{column: metrics.get(column, "") for column in METRIC_COLUMNS},
+        "signal_delay_seconds": _blank(order.signal_delay_seconds, 3),
+        "order_delay_seconds": _blank(order.order_delay_seconds, 3),
+        "reference_open": _blank(order.reference_open),
+        "entry_price": _blank(entry_price),
+        "entry_slippage_atr": _blank(slippage_atr, 4),
+    }
     with path.open("a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        if new:
-            writer.writerow(TRADE_HEADERS)
-        writer.writerow([
-            datetime.now(timezone.utc).isoformat(), asset, signal.direction, amount,
-            order_id, pnl, round(signal.rsi14, 2), signal.strategy,
-            STRATEGY_VERSIONS[signal.strategy],
-            signal.candle_time, signal.close, signal.ema20, signal.ema50, signal.reason,
-            "" if balance_after is None else balance_after,
-            pnl / amount if pnl > 0 else 0.0,
-            "" if quoted_payout is None else quoted_payout,
-            "" if expiration_min is None else expiration_min,
-            *((signal.metrics or {}).get(column, "") for column in (
-                "ema200", "ema200_slope", "ema_slope_atr", "bb_upper", "bb_lower",
-                "rsi10", "trend_side_count", "band_break_atr",
-            )),
-            "" if signal_delay_seconds is None else round(signal_delay_seconds, 3),
-        ])
+        # Se escribe por nombre de columna: tras una migración el orden del archivo
+        # puede diferir de TRADE_HEADERS.
+        writer = csv.DictWriter(file, fieldnames=header or TRADE_HEADERS, extrasaction="ignore")
+        if header is None:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def resolve_pending_orders(client, pending: dict, risk) -> None:
+    """Registra las órdenes cerradas sin bloquear el escaneo de los demás pares."""
+    now = time.time()
+    for order_id, order in list(pending.items()):
+        try:
+            pnl = poll_order_pnl(client, order_id)
+            if (
+                pnl is None
+                and now >= order.expires_at + RESULT_FALLBACK_SECONDS
+                and now - order.fallback_checked_at >= RESULT_FALLBACK_INTERVAL_SECONDS
+            ):
+                order.fallback_checked_at = now
+                log.warning("%s | Orden %s sin resultado %.0fs después del vencimiento; "
+                            "consultando historial", order.asset, order_id,
+                            now - order.expires_at)
+                pnl = find_closed_option_pnl(client, order_id)
+        except Exception as exc:
+            log.warning("%s | No se pudo consultar el resultado de %s: %s",
+                        order.asset, order_id, exc)
+            continue
+        if pnl is None:
+            continue
+        del pending[order_id]
+        risk.record(pnl)
+        entry_price = order_entry_price(client, order_id)
+        slippage = entry_slippage_atr(
+            order.signal.direction, entry_price, order.reference_open,
+            (order.signal.metrics or {}).get("atr14"),
+        )
+        try:
+            balance_after = float(client.get_balance())
+        except Exception:
+            balance_after = None
+        save_trade(order, pnl, balance_after, entry_price, slippage)
+        log.info(
+            "%s | Resultado orden %s PnL=%.2f | diario=%.2f | entrada=%s ref_open=%s "
+            "deslizamientoATR=%s | abiertas=%d",
+            order.asset, order_id, pnl, risk.pnl, _blank(entry_price),
+            _blank(order.reference_open), _blank(slippage, 3), len(pending),
+        )
 
 
 def format_signal_metrics(signal) -> str:
@@ -180,7 +255,11 @@ def main():
     )
     last_signal_candles = {asset: None for asset in cfg.assets}
     timeframe_seconds = cfg.timeframe_min * 60
-    history_candles = STRATEGY_WINDOWS[cfg.strategy]
+    # Se pide una vela más que la ventana: la última está en formación y se descarta.
+    candle_cache = CandleCache(
+        min(STRATEGY_WINDOWS[cfg.strategy] + 1, MAX_CANDLES_PER_REQUEST)
+    )
+    pending: dict[int, PendingOrder] = {}
     disabled_until = {asset: 0.0 for asset in cfg.assets}
     next_trade_candle = {asset: 0 for asset in cfg.assets}
     asset_cursor = 0
@@ -202,7 +281,10 @@ def main():
                 TRADE_PATH, cfg.max_trades_day, cfg.max_consecutive_losses,
                 effective_daily_loss, day=risk_day, day_timezone=risk_timezone,
             )
-        if cfg.enable_trading and cfg.enforce_risk_limits:
+        if pending:
+            resolve_pending_orders(client, pending, risk)
+        # Con órdenes abiertas el bot sigue activo para registrar sus resultados.
+        if cfg.enable_trading and cfg.enforce_risk_limits and not pending:
             allowed, reason = risk.can_trade(cfg.amount)
             if not allowed:
                 log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
@@ -213,8 +295,16 @@ def main():
             if timeframe_seconds == 60:
                 minute_bucket = int(time.time()) // timeframe_seconds
                 if minute_bucket == last_minute_scan:
+                    if cfg.enable_trading and cfg.enforce_min_payout:
+                        try:
+                            payouts.prefetch()
+                        except Exception as payout_error:
+                            log.debug("Precarga de payout fallida: %s", payout_error)
                     next_boundary = (minute_bucket + 1) * timeframe_seconds
-                    time.sleep(max(0.05, next_boundary + 0.25 - time.time()))
+                    wait = max(0.05, next_boundary + 0.25 - time.time())
+                    # Con órdenes abiertas se despierta cada segundo para registrar
+                    # el resultado apenas IQ Option lo notifique.
+                    time.sleep(min(wait, 1.0) if pending else wait)
                     continue
                 last_minute_scan = minute_bucket
                 # En M1 se analizan todos los pares en el mismo ciclo para evitar
@@ -226,20 +316,18 @@ def main():
                 )
             status_scans += 1
             for asset in asset_batch:
-                if cfg.enable_trading and cfg.enforce_risk_limits:
-                    allowed, reason = risk.can_trade(cfg.amount)
-                    if not allowed:
-                        log.warning("Bot detenido: %s | PnL=%.2f", reason, risk.pnl)
-                        return
                 if time.monotonic() < disabled_until[asset]:
                     continue
                 now = int(time.time())
                 try:
                     status_assets_queried += 1
                     candles = client.get_candles(
-                        asset, timeframe_seconds, history_candles, now
+                        asset, timeframe_seconds,
+                        candle_cache.request_count(asset, now, timeframe_seconds), now,
                     )
-                    if cfg.asset_request_delay_seconds:
+                    # En M1 la pausa retrasaría la entrada de los pares siguientes;
+                    # la caché ya reduce cada consulta a unas pocas velas.
+                    if cfg.asset_request_delay_seconds and timeframe_seconds != 60:
                         time.sleep(cfg.asset_request_delay_seconds)
                 except Exception as asset_error:
                     if is_connection_error(asset_error) or not client.check_connect():
@@ -255,6 +343,7 @@ def main():
                     log.warning("%s | Sin velas; omitido durante 5 minutos", asset)
                     continue
                 status_assets_with_candles += 1
+                candles = candle_cache.merge(asset, candles)
                 closed = [c for c in candles if int(c["from"]) + timeframe_seconds <= now]
                 if closed:
                     candle_time = int(closed[-1]["from"])
@@ -289,6 +378,23 @@ def main():
                         format_signal_metrics(signal),
                     )
                     if cfg.enable_trading:
+                        if any(order.asset == asset for order in pending.values()):
+                            log.info("%s | Señal omitida: el par ya tiene una orden abierta",
+                                     asset)
+                            continue
+                        if len(pending) >= cfg.max_open_trades:
+                            log.info("%s | Señal omitida: %d operaciones abiertas (máximo %d)",
+                                     asset, len(pending), cfg.max_open_trades)
+                            continue
+                        if cfg.enforce_risk_limits:
+                            allowed, reason = risk.can_trade(
+                                cfg.amount, len(pending),
+                                sum(order.amount for order in pending.values()),
+                            )
+                            if not allowed:
+                                log.info("%s | Señal omitida: %s (abiertas=%d)",
+                                         asset, reason, len(pending))
+                                continue
                         quoted_payout = None
                         if cfg.enforce_min_payout:
                             try:
@@ -311,23 +417,35 @@ def main():
                             log.warning("%s | Orden rechazada: %s | omitido %d minutos",
                                         asset, order_id, cooldown // 60)
                         else:
-                            log.info("%s | Orden %s enviada: %s", asset, cfg.account, order_id)
-                            raw_result = client.check_win_v4(order_id)
-                            pnl = extract_pnl(raw_result)
-                            risk.record(pnl)
+                            ordered_at = time.time()
+                            entry_candle_time = signal.candle_time + timeframe_seconds
+                            reference_open = next((
+                                float(c["open"]) for c in candles
+                                if int(c["from"]) == entry_candle_time
+                            ), None)
+                            pending[order_id] = PendingOrder(
+                                order_id=order_id,
+                                asset=asset,
+                                signal=signal,
+                                amount=cfg.amount,
+                                expiration_min=expiration_min,
+                                # Límite superior: IQ Option puede sumar un minuto si
+                                # la orden entra en la segunda mitad del minuto.
+                                expires_at=ordered_at + (expiration_min + 1) * 60,
+                                quoted_payout=quoted_payout,
+                                signal_delay_seconds=signal_delay_seconds,
+                                order_delay_seconds=ordered_at - entry_candle_time,
+                                reference_open=reference_open,
+                            )
                             next_trade_candle[asset] = (
                                 signal.candle_time
                                 + cfg.min_candles_between_trades * timeframe_seconds
                             )
-                            try:
-                                balance_after = float(client.get_balance())
-                            except Exception:
-                                balance_after = None
-                            save_trade(
-                                asset, signal, cfg.amount, order_id, pnl, balance_after,
-                                quoted_payout, expiration_min, signal_delay_seconds,
+                            log.info(
+                                "%s | Orden %s enviada: %s | retraso_orden=%.2fs | abiertas=%d",
+                                asset, cfg.account, order_id,
+                                ordered_at - entry_candle_time, len(pending),
                             )
-                            log.info("%s | Resultado PnL=%.2f | diario=%.2f", asset, pnl, risk.pnl)
             status_elapsed = time.monotonic() - last_status_log
             if status_elapsed >= cfg.status_log_interval_min * 60:
                 if last_closed_candle is None:
@@ -338,9 +456,10 @@ def main():
                     ).isoformat()
                 log.info(
                     "ESTADO | activo | conexión=%s | ciclos=%d | consultas=%d | "
-                    "con_velas=%d | señales=%d | última_vela_UTC=%s",
+                    "con_velas=%d | señales=%d | abiertas=%d | última_vela_UTC=%s",
                     client.check_connect(), status_scans, status_assets_queried,
-                    status_assets_with_candles, status_signals, last_candle_text,
+                    status_assets_with_candles, status_signals, len(pending),
+                    last_candle_text,
                 )
                 last_status_log = time.monotonic()
                 status_scans = 0
@@ -351,6 +470,9 @@ def main():
                 time.sleep(10)
         except KeyboardInterrupt:
             log.info("Detenido por el usuario")
+            if pending:
+                log.warning("Órdenes abiertas sin registrar en trades.csv: %s",
+                            ", ".join(str(order_id) for order_id in pending))
             break
         except Exception as exc:
             log.exception("Error recuperable: %s", exc)

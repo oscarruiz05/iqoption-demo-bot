@@ -58,6 +58,7 @@ class Settings:
     enforce_max_real_amount: bool = _bool("ENFORCE_MAX_REAL_AMOUNT", True)
     min_candles_between_trades: int = int(os.getenv("MIN_CANDLES_BETWEEN_TRADES", "5"))
     max_trades_day: int = int(os.getenv("MAX_TRADES_DAY", "10"))
+    max_open_trades: int = int(os.getenv("MAX_OPEN_TRADES", "3"))
     max_consecutive_losses: int = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "5"))
     max_risk_per_trade_pct: float = float(os.getenv("MAX_RISK_PER_TRADE_PCT", "1"))
@@ -91,6 +92,8 @@ class Settings:
             raise ValueError("IQ_EXPIRATION_MIN debe ser 1, 3, 4, 5 o 15")
         if self.min_candles_between_trades < 0:
             raise ValueError("MIN_CANDLES_BETWEEN_TRADES no puede ser negativo")
+        if self.max_open_trades < 1:
+            raise ValueError("MAX_OPEN_TRADES debe ser al menos 1")
         if self.asset_batch_size < 1:
             raise ValueError("ASSET_BATCH_SIZE debe ser al menos 1")
         if not 0 <= self.asset_request_delay_seconds <= 10:
