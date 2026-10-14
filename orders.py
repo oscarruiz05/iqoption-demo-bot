@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
 
 from signals import Signal
 
@@ -27,6 +29,30 @@ class PendingOrder:
     # Apertura de la vela de entrada: el precio que supone el backtest.
     reference_open: float | None = None
     fallback_checked_at: float = 0.0
+
+
+def save_pending_orders(path: Path, pending: dict) -> None:
+    """Guarda las órdenes abiertas para registrarlas aunque el bot se reinicie."""
+    if not pending:
+        path.unlink(missing_ok=True)
+        return
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps([asdict(order) for order in pending.values()], indent=2),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def load_pending_orders(path: Path) -> dict[int, PendingOrder]:
+    if not path.exists():
+        return {}
+    orders = {}
+    for data in json.loads(path.read_text(encoding="utf-8")):
+        data["signal"] = Signal(**data["signal"])
+        order = PendingOrder(**data)
+        orders[order.order_id] = order
+    return orders
 
 
 def closed_option_pnl(message) -> float | None:
